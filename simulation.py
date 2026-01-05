@@ -3,7 +3,7 @@ import random as rd
 import numpy as np
 from typing import Dict, List, Tuple
 from network import Network, Intersection, Lane
-# TODO: add config import for parameters
+import config
 
 class Vehicle:
     """
@@ -97,7 +97,7 @@ class TrafficSimulation:
 
         while True:
             # get current phase duration
-            phase_duration = light.get_phrase_duration(light.current_phase())
+            phase_duration = light.get_phase_duration(light.current_phase)
 
             if self.verbose >= 2:
                 print(f"[{self.env.now:.1f}s] Intersection {intersection.intersection_id}: "
@@ -152,7 +152,7 @@ class TrafficSimulation:
         Process for a vehicle waiting in queue and departing.
         """
         # wait until green light
-        while not intersection.traffic_light.is_green_for_lane(lane.direction):
+        while not intersection.traffic_light.is_green(lane.direction):
             yield self.env.timeout(0.1) # check every 0.1s
         
         # service time (exponential for M/M/1)
@@ -209,7 +209,7 @@ class TrafficSimulation:
         # count blocked intersections (queue > threshold)
         blocked_count = 0
         for lane in self.network.get_all_lanes():
-            if lane.current_queue_length > 50: # threshold from config -> todo: modify
+            if lane.current_queue_length > config.MAX_QUEUE_THRESHOLD:
                 blocked_count += 1
 
         metrics = {
@@ -271,3 +271,32 @@ def run_multiple_simulations(network: Network, num_runs: int, duration: float,
     
     return averaged
     
+
+if __name__ == "__main__":
+    """
+    Basic test of simulation module.
+    """
+    from network import Network
+
+    network = Network(
+        num_intersections=4,
+        topology=config.NETWORK_TOPOLOGY,
+        arrival_rate=config.ARRIVAL_RATE,
+        service_rate=config.SERVICE_RATE,
+        initial_green=config.INITIAL_GREEN_TIME
+    )
+
+    # run short simulation
+    print("Running 100-second test simulation...")
+    sim = TrafficSimulation(network, duration=100, warmup=0, random_seed=42, verbose=1)
+    metrics = sim.run()
+    
+    print("\nSimulation completed successfully!")
+    print(f"Vehicles processed: {metrics['total_vehicles']}")
+    print(f"Avg waiting time: {metrics['avg_waiting_time']:.2f}s")
+    
+    # sanity checks
+    assert metrics['total_vehicles'] > 0, "No vehicles processed!"
+    assert metrics['avg_waiting_time'] > 0, "Invalid waiting time!"
+    
+    print("\nAll tests passed!")
