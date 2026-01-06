@@ -246,6 +246,192 @@ def plot_queue_evolution(queue_data: Dict[int, List], save_path: str = None):
     plt.show()
 
 
+def generate_all_plots(baseline_metrics: Dict, pso_metrics: Dict, pso_history: Dict,
+                      baseline_timings: np.ndarray, optimized_timings: np.ndarray,
+                      num_intersections: int, output_dir: str, aco_metrics: Dict = None,
+                      aco_history: Dict = None):
+    """
+    Generate and save all visualization plots.
+    """
+    import os
+
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+        print(f"Created output directory: {output_dir}")
+    
+    print(f"\n{'~' * 5} GENERATING VISUALIZATIONS {'~' * 5}")
+    
+    # 1. optimization convergence
+    print("Generating convergence plot...")
+    plot_optimization_convergence(
+        pso_history=pso_history,
+        aco_history=aco_history,
+        save_path=os.path.join(output_dir, 'convergence.png')
+    )
+    
+    # 2. comparison bars
+    print("Generating comparison plot...")
+    plot_comparison_bars(
+        baseline_metrics=baseline_metrics,
+        pso_metrics=pso_metrics,
+        aco_metrics=aco_metrics,
+        save_path=os.path.join(output_dir, 'comparison.png')
+    )
+    
+    # 3. improvement percentages
+    print("Generating improvement plot...")
+    plot_improvement_percentages(
+        baseline_metrics=baseline_metrics,
+        pso_metrics=pso_metrics,
+        aco_metrics=aco_metrics,
+        save_path=os.path.join(output_dir, 'improvement.png')
+    )
+    
+    # 4. signal timings
+    print("Generating signal timing plot...")
+    plot_signal_timings(
+        baseline_timings=baseline_timings,
+        optimized_timings=optimized_timings,
+        num_intersections=num_intersections,
+        save_path=os.path.join(output_dir, 'signal_timings.png')
+    )
+    
+    # 5. queue evolution (if data available)
+    if 'queue_samples' in pso_metrics:
+        print("Generating queue evolution plot...")
+        plot_queue_evolution(
+            queue_data=pso_metrics['queue_samples'],
+            save_path=os.path.join(output_dir, 'queue_evolution.png')
+        )
+    
+    print(f"All plots saved to '{output_dir}/'")
+    print("~" * 60 + "\n")
+
+
+def plot_pso_particles_live(pso, iteration: int):
+    """
+    Real-time visualization of PSO particles (fast, non-blocking version).
+    Shows first 2 decision variables (Intersection 0: NS green, EW green).
+    """
+    # create figure on first call only
+    if not hasattr(plot_pso_particles_live, 'fig'):
+        plt.ion()  # interactive mode
+        plot_pso_particles_live.fig, plot_pso_particles_live.axes = plt.subplots(1, 2, figsize=(15, 6))
+        plt.show(block=False)
+    
+    fig = plot_pso_particles_live.fig
+    ax1, ax2 = plot_pso_particles_live.axes
+    
+    ax1.clear()
+    ax2.clear()
+    
+    # --- LEFT PLOT: Particle positions (simple scatter, no contour) ---
+    
+    # extract first 2 dimensions (Intersection 0: NS green, EW green)
+    positions_2d = pso.positions[:, :2]
+    pbest_2d = pso.personal_best_positions[:, :2]
+    gbest_2d = pso.global_best_position[:2] if pso.global_best_position is not None else None
+    
+    # color particles by their fitness (darker = better)
+    particle_scores = [pso.personal_best_scores[i] for i in range(pso.num_particles)]
+    
+    # plot particles with color mapping
+    scatter = ax1.scatter(positions_2d[:, 0], positions_2d[:, 1], 
+                         c=particle_scores, cmap='RdYlGn_r', s=150, alpha=0.8, 
+                         edgecolors='black', linewidth=1.5, vmin=min(particle_scores), vmax=max(particle_scores),
+                         label=f'Particles (n={pso.num_particles})', zorder=5)
+    
+    # add colorbar
+    if iteration == 0:
+        plot_pso_particles_live.cbar = plt.colorbar(scatter, ax=ax1)
+        plot_pso_particles_live.cbar.set_label('Fitness Score', fontsize=10)
+    else:
+        plot_pso_particles_live.cbar.update_normal(scatter)
+    
+    # plot personal bests (smaller, transparent)
+    ax1.scatter(pbest_2d[:, 0], pbest_2d[:, 1], 
+               c='green', s=60, alpha=0.4, marker='x',
+               label='Personal Bests', zorder=4)
+    
+    # plot global best (big red star)
+    if gbest_2d is not None:
+        ax1.scatter(gbest_2d[0], gbest_2d[1], 
+                   c='red', s=400, alpha=1.0, marker='*', edgecolors='black', linewidth=2,
+                   label=f'Global Best ({pso.global_best_score:.2f})', zorder=10)
+    
+    # draw velocity vectors (arrows)
+    velocities_2d = pso.velocities[:, :2]
+    for i in range(len(positions_2d)):
+        ax1.arrow(positions_2d[i, 0], positions_2d[i, 1],
+                 velocities_2d[i, 0] * 1.5, velocities_2d[i, 1] * 1.5,
+                 head_width=1.5, head_length=1.2, fc='cyan', ec='darkblue', 
+                 alpha=0.5, linewidth=1, zorder=3)
+    
+    ax1.set_xlabel('Intersection 0: NS Green Time (s)', fontsize=11, fontweight='bold')
+    ax1.set_ylabel('Intersection 0: EW Green Time (s)', fontsize=11, fontweight='bold')
+    ax1.set_title(f'PSO Swarm - Iteration {iteration + 1}/{pso.num_iterations}', 
+                 fontsize=13, fontweight='bold')
+    ax1.legend(loc='upper left', fontsize=9, framealpha=0.9)
+    ax1.grid(True, alpha=0.3, linestyle='--')
+    
+    x_min = min(positions_2d[:, 0].min(), pbest_2d[:, 0].min())
+    x_max = max(positions_2d[:, 0].max(), pbest_2d[:, 0].max())
+    y_min = min(positions_2d[:, 1].min(), pbest_2d[:, 1].min())
+    y_max = max(positions_2d[:, 1].max(), pbest_2d[:, 1].max())
+
+    padding = 5
+    ax1.set_xlim(x_min - padding, x_max + padding)
+    ax1.set_ylim(y_min - padding, y_max + padding)
+    
+    # add search bounds rectangle
+    rect = plt.Rectangle((pso.bounds[0], pso.bounds[0]), 
+                         pso.bounds[1] - pso.bounds[0], 
+                         pso.bounds[1] - pso.bounds[0],
+                         fill=False, edgecolor='gray', linewidth=2, linestyle='--', zorder=1)
+    ax1.add_patch(rect)
+    
+    # --- RIGHT PLOT: Convergence curve ---
+    
+    iterations = pso.history['iterations']
+    best_scores = pso.history['best_scores']
+    avg_scores = pso.history['avg_scores']
+    
+    ax2.plot(iterations, best_scores, 'b-', linewidth=2.5, label='Best Score', 
+            marker='o', markersize=5, markerfacecolor='blue', markeredgecolor='white')
+    ax2.plot(iterations, avg_scores, 'orange', linewidth=2, linestyle='--', alpha=0.8, 
+            label='Average Score', marker='s', markersize=4)
+    
+    ax2.fill_between(iterations, best_scores, avg_scores, alpha=0.2, color='blue')
+    
+    ax2.set_xlabel('Iteration', fontsize=11, fontweight='bold')
+    ax2.set_ylabel('Objective Function Value', fontsize=11, fontweight='bold')
+    ax2.set_title('Convergence Progress', fontsize=13, fontweight='bold')
+    ax2.legend(loc='upper right', fontsize=10)
+    ax2.grid(True, alpha=0.3, linestyle='--')
+    
+    # annotate current best
+    if len(best_scores) > 0:
+        improvement = ((best_scores[0] - best_scores[-1]) / best_scores[0] * 100) if best_scores[0] > 0 else 0
+        ax2.text(0.02, 0.98, 
+                f'Current Best: {pso.global_best_score:.2f}\nImprovement: {improvement:.1f}%',
+                transform=ax2.transAxes, fontsize=10, fontweight='bold',
+                verticalalignment='top',
+                bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.7))
+    
+    plt.tight_layout()
+    fig.canvas.draw()
+    fig.canvas.flush_events()
+
+    if iteration == pso.num_iterations - 1:  # last iteration
+        import config
+        if not os.path.exists(config.OUTPUT_DIR):
+            os.makedirs(config.OUTPUT_DIR)
+        
+        save_path = os.path.join(config.OUTPUT_DIR, 'pso_particles_final.png')
+        fig.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"\n[SAVED] Final PSO particle plot saved to {save_path}")
+
+
 def create_traffic_animation(network, simulation_data: Dict, save_path: str = None):
     """
     Create animated visualization of traffic flow through network.

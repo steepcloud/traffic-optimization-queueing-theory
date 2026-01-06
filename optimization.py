@@ -1,5 +1,6 @@
 import numpy as np
 import time
+import config
 from typing import Dict, Tuple, Callable
 
 
@@ -120,14 +121,20 @@ class PSO:
             self.history['best_scores'].append(self.global_best_score)
             self.history['avg_scores'].append(avg_score)
             self.history['iterations'].append(iteration)
-            
+
+            # live visualization (TODO: maybe add option to disable)
+            if verbose >= 1:
+                if config.SHOW_PLOTS_DURING_OPT:
+                    from visualization import plot_pso_particles_live
+                    plot_pso_particles_live(self, iteration)
+
             # progress report
             iteration_time = time.time() - iteration_start
             if verbose >= 1:
                 print(f"Iteration {iteration + 1:3d}/{self.num_iterations} | "
                       f"Best: {self.global_best_score:8.2f} | "
                       f"Avg: {avg_score:8.2f} | "
-                      f"Time: {iteration_time:5.1f}s")
+                      f"Time: {iteration_time:5.1f}s", flush=True)
             
         total_time = time.time() - start_time
 

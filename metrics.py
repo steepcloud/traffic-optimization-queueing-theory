@@ -114,7 +114,7 @@ def format_metrics_report(metrics: Dict, objective: float) -> str:
     if 'std_waiting_time' in metrics:
         report.append(f"Std Dev Waiting Time:     {metrics['std_waiting_time']:.2f} seconds")
     
-    report.append("~" * 15)
+    report.append("~" * 60)
     
     return "\n".join(report)
 
