@@ -365,6 +365,23 @@ class Network:
         return (f"Network({self.num_intersections} intersections, "
                 f"{len(self.get_all_lanes())} total lanes)")
 
+    def get_positions(self) -> Dict[int, Tuple[int, int]]:
+        """Get spatial positions of all intersections."""
+        if hasattr(self, 'positions'):
+            return self.positions
+        
+        # return default positions based on network size
+        if self.num_intersections == 4:
+            return {0: (0, 1), 1: (1, 1), 2: (0, 0), 3: (1, 0)}
+        elif self.num_intersections == 9:
+            return {
+                0: (0, 2), 1: (1, 2), 2: (2, 2),
+                3: (0, 1), 4: (1, 1), 5: (2, 1),
+                6: (0, 0), 7: (1, 0), 8: (2, 0)
+            }
+        else:
+            return {i: (i, 0) for i in range(self.num_intersections)}
+
 
 if __name__ == "__main__":
     """Unit tests for network module"""

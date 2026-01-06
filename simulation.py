@@ -60,6 +60,11 @@ class TrafficSimulation:
         for lane in network.get_all_lanes():
             self.queue_length_samples[lane.lane_id] = []
         
+        # traffic light state tracking
+        self.light_state_samples: Dict[int, List[Tuple[float, int]]] = {}
+        for int_id in network.intersections.keys():
+            self.light_state_samples[int_id] = []
+        
     def run(self) -> Dict:
         """
         Run the simulation and return performance metrics.
@@ -96,6 +101,11 @@ class TrafficSimulation:
         light = intersection.traffic_light
 
         while True:
+            # track current phase state
+            self.light_state_samples[intersection.intersection_id].append(
+                (self.env.now, light.current_phase)
+            )
+
             # get current phase duration
             phase_duration = light.get_phase_duration(light.current_phase)
 
@@ -218,7 +228,9 @@ class TrafficSimulation:
             'total_vehicles': len(valid_vehicles),
             'blocked_intersections': blocked_count,
             'avg_queue_length': np.mean([lane.current_queue_length
-                                         for lane in self.network.get_all_lanes()])
+                                         for lane in self.network.get_all_lanes()]),
+            'queue_samples': self.queue_length_samples,
+            'light_states': self.light_state_samples
         }
 
         if self.verbose >= 1:
