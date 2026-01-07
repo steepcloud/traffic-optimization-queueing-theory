@@ -245,7 +245,7 @@ class TrafficSimulation:
 
 def run_multiple_simulations(network: Network, num_runs: int, duration: float,
                              warmup: float = 0, random_seed: int = None,
-                             verbose: int = 0) -> List[Dict]:
+                             verbose: int = 0) -> Dict:
     """
     Run multiple simulations and average the results (handle stochasticity).
 
@@ -258,9 +258,10 @@ def run_multiple_simulations(network: Network, num_runs: int, duration: float,
         verbose: Verbosity level (0=silent, 1=basic, 2=detailed)
     
     Returns:
-        Average metrics across all runs.
+        Average metrics across all runs WITH queue_samples and light_states from last run.
     """
     all_metrics = []
+    last_run_data = None  # store last run's detailed data
 
     for run in range(num_runs):
         seed = random_seed + run if random_seed is not None else None
@@ -268,6 +269,13 @@ def run_multiple_simulations(network: Network, num_runs: int, duration: float,
         sim = TrafficSimulation(network, duration, warmup, seed, verbose=0)
         metrics = sim.run()
         all_metrics.append(metrics)
+        
+        # keep last run's queue and light data for animation
+        if run == num_runs - 1:
+            last_run_data = {
+                'queue_samples': metrics['queue_samples'],
+                'light_states': metrics['light_states']
+            }
         
         if verbose >= 1:
             print(f"Run {run+1}/{num_runs}: Avg Wait = {metrics['avg_waiting_time']:.2f}s")
@@ -278,7 +286,9 @@ def run_multiple_simulations(network: Network, num_runs: int, duration: float,
         'max_queue_length': np.mean([m['max_queue_length'] for m in all_metrics]),
         'total_vehicles': np.mean([m['total_vehicles'] for m in all_metrics]),
         'blocked_intersections': np.mean([m['blocked_intersections'] for m in all_metrics]),
-        'std_waiting_time': np.std([m['avg_waiting_time'] for m in all_metrics])
+        'std_waiting_time': np.std([m['avg_waiting_time'] for m in all_metrics]),
+        'queue_samples': last_run_data['queue_samples'],
+        'light_states': last_run_data['light_states']
     }
     
     return averaged

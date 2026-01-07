@@ -174,13 +174,19 @@ class Network:
         # all intersections
         self.intersections: Dict[int, Intersection] = {}
         for i in range(num_intersections):
-            self.intersections[i] = Intersection(
-                intersection_id=i,
-                arrival_rate=arrival_rate,
-                service_rate=service_rate,
-                green_ns=initial_green,
-                green_ew=initial_green
-            )
+            # use asymmetric rates if available, otherwise uniform
+            if hasattr(config, 'USE_ASYMMETRIC_TRAFFIC') and config.USE_ASYMMETRIC_TRAFFIC:
+                self.intersections[i] = self._create_asymmetric_intersection(
+                    i, service_rate, initial_green
+                )
+            else:
+                self.intersections[i] = Intersection(
+                    intersection_id=i,
+                    arrival_rate=arrival_rate,
+                    service_rate=service_rate,
+                    green_ns=initial_green,
+                    green_ew=initial_green
+                )
         
         # set up connections based on topology
         self._setup_connections()
@@ -272,6 +278,27 @@ class Network:
                 connections[direction] = connected_id
             
             self.intersections[int_id].outgoing_connections = connections
+    
+    def _create_asymmetric_intersection(self, int_id: int, service_rate: float, 
+                                     initial_green: float) -> Intersection:
+        """
+        Create intersection with asymmetric per-lane arrival rates.
+        """
+        intersection = Intersection.__new__(Intersection)
+        intersection.intersection_id = int_id
+        intersection.lanes = {}
+        intersection.outgoing_connections = {}
+        
+        # create lanes with individual arrival rates
+        for i, direction in enumerate(['N', 'S', 'E', 'W']):
+            lane_id = int_id * 4 + i
+            lane_arrival = config.LANE_ARRIVAL_RATES[int_id][direction]
+            intersection.lanes[direction] = Lane(lane_id, direction, lane_arrival, service_rate)
+        
+        # create traffic light
+        intersection.traffic_light = TrafficLight(green_ns=initial_green, green_ew=initial_green)
+        
+        return intersection
     
     def _auto_detect_layout(self) -> Dict[int, Tuple[int, int]]:
         """

@@ -7,8 +7,42 @@ from network import Network
 from simulation import run_multiple_simulations
 from metrics import calculate_objective_function, format_metrics_report, calculate_improvement
 from optimization import PSO
-from visualization import generate_all_plots
+from visualization import generate_all_plots, create_traffic_animation
 
+
+class ObjectiveFunctionWrapper:
+    """Picklable wrapper for PSO objective function evaluation."""
+    
+    def __init__(self, network: Network):
+        self.network = network
+    
+    def __call__(self, timings: np.ndarray) -> float:
+        """
+        Evaluate fitness of given signal timings.
+        Lower is better.
+        """
+        # update network with these timings
+        self.network.update_signal_timings(timings)
+        
+        # run simulation
+        metrics = run_multiple_simulations(
+            network=self.network,
+            num_runs=config.NUM_SIMULATION_RUNS,
+            duration=config.SIMULATION_DURATION,
+            warmup=config.WARMUP_PERIOD,
+            random_seed=config.RANDOM_SEED,
+            verbose=0  # silent during optimization
+        )
+        
+        # calculate objective
+        obj = calculate_objective_function(
+            metrics,
+            config.OBJECTIVE_WEIGHTS,
+            config.MAX_QUEUE_THRESHOLD
+        )
+        
+        return obj
+    
 
 def create_network() -> Network:
     """
@@ -82,33 +116,7 @@ def optimize_with_pso(network: Network) -> tuple:
     # number of decision variables: 2 per intersection (NS green, EW green)
     num_variables = config.NUM_INTERSECTIONS * 2
     
-    # define objective function for optimizer
-    def objective_function(timings: np.ndarray) -> float:
-        """
-        Evaluate fitness of given signal timings.
-        Lower is better.
-        """
-        # update network with these timings
-        network.update_signal_timings(timings)
-        
-        # run simulation
-        metrics = run_multiple_simulations(
-            network=network,
-            num_runs=config.NUM_SIMULATION_RUNS,
-            duration=config.SIMULATION_DURATION,
-            warmup=config.WARMUP_PERIOD,
-            random_seed=config.RANDOM_SEED,
-            verbose=0  # silent during optimization
-        )
-        
-        # calculate objective
-        obj = calculate_objective_function(
-            metrics,
-            config.OBJECTIVE_WEIGHTS,
-            config.MAX_QUEUE_THRESHOLD
-        )
-        
-        return obj
+    objective_function = ObjectiveFunctionWrapper(network)
     
     # create PSO optimizer
     pso = PSO(
@@ -198,6 +206,13 @@ def main():
             optimized_timings=pso_timings,
             num_intersections=config.NUM_INTERSECTIONS,
             output_dir=config.OUTPUT_DIR
+        )
+
+        print("\nGenerating traffic animation...")
+        create_traffic_animation(
+            network=network,
+            simulation_data=pso_metrics,  # has queue_samples and light_states
+            save_path=os.path.join(config.OUTPUT_DIR, 'traffic_animation.mp4')
         )
 
         # keep plots visible

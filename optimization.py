@@ -1,7 +1,9 @@
 import numpy as np
 import time
 import config
-from typing import Dict, Tuple, Callable
+from typing import Dict, Tuple, Callable, Optional
+from multiprocessing import Pool
+import os
 
 
 class PSO:
@@ -13,13 +15,14 @@ class PSO:
     """
 
     def __init__(self, objective_function: Callable, num_variables: int,
-                 bounds: Tuple[float, float], config: Dict):
+                 bounds: Tuple[float, float], config: Dict, num_processes: Optional[int] = None):
         """
         Args:
             objective_function: Function that takes timings and returns fitness
             num_variables: Number of decision variables (2 per intersection: NS, EW)
             bounds: (min, max) for each variable
             config: PSO parameters (num_particles, iterations, w, c1, c2)
+            num_processes: Number of parallel processes (default: os.cpu_count())
         """
         self.objective_function = objective_function
         self.num_variables = num_variables
@@ -56,6 +59,13 @@ class PSO:
             'avg_scores': [],
             'iterations': []
         }
+
+        self.num_processes = num_processes or os.cpu_count()
+
+        # early stopping parameters
+        self.patience = 5  # stop if no improvement for 5 iterations
+        self.min_improvement = 0.01  # minimum 1% improvement threshold
+        self.best_score_history = []
     
     def optimize(self, verbose: int = 1) -> Tuple[np.ndarray, float]:
         """
@@ -77,21 +87,21 @@ class PSO:
         
         for iteration in range(self.num_iterations):
             iteration_start = time.time()
-            scores = []
-
-            # evaluate all particles
+            
+            # evaluate all particles in parallel
+            with Pool(processes=self.num_processes) as pool:
+                scores = pool.map(self.objective_function, self.positions)
+            
+            # update personal and global bests
             for i in range(self.num_particles):
-                score = self.objective_function(self.positions[i])
-                scores.append(score)
-
                 # update personal best
-                if score < self.personal_best_scores[i]:
-                    self.personal_best_scores[i] = score
+                if scores[i] < self.personal_best_scores[i]:
+                    self.personal_best_scores[i] = scores[i]
                     self.personal_best_positions[i] = self.positions[i].copy()
                 
                 # update global best
-                if score < self.global_best_score:
-                    self.global_best_score = score
+                if scores[i] < self.global_best_score:
+                    self.global_best_score = scores[i]
                     self.global_best_position = self.positions[i].copy()
                 
             # update velocities and positions
@@ -121,6 +131,16 @@ class PSO:
             self.history['best_scores'].append(self.global_best_score)
             self.history['avg_scores'].append(avg_score)
             self.history['iterations'].append(iteration)
+
+            # early stopping check
+            self.best_score_history.append(self.global_best_score)
+            if len(self.best_score_history) > self.patience:
+                recent_improvement = (self.best_score_history[-self.patience] - self.global_best_score) / self.best_score_history[-self.patience]
+                if recent_improvement < self.min_improvement:
+                    if verbose >= 1:
+                        print(f"\n[EARLY STOP] No significant improvement for {self.patience} iterations")
+                        print(f"Recent improvement: {recent_improvement*100:.2f}% < {self.min_improvement*100:.2f}% threshold")
+                    break  # exit optimization loop
 
             # live visualization (TODO: maybe add option to disable)
             if verbose >= 1:
