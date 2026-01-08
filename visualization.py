@@ -438,36 +438,25 @@ def plot_pso_particles_live(pso, iteration: int):
 
 def create_traffic_animation(network, simulation_data: Dict, save_path: str = None):
     """
-    Create professional animated visualization of traffic flow through network.
-    
-    Features:
-    - Large spacing between intersections (no label overlap)
-    - Slow, clear animation showing traffic evolution
-    - Queue bars extending from intersections
-    - Color-coded traffic lights (red/yellow/green)
-    - Statistics panel showing network state
+    Create professional animated visualization with MASSIVE spacing.
     """
     import config
     
-    fig = plt.figure(figsize=(16, 12))
+    fig = plt.figure(figsize=(24, 16))
     
-    # create main plot and stats panel
-    gs = fig.add_gridspec(1, 4, width_ratios=[3, 3, 3, 1], hspace=0.3)
-    ax = fig.add_subplot(gs[0, :3])  # main traffic plot (3/4 width)
-    ax_stats = fig.add_subplot(gs[0, 3])  # stats panel (1/4 width)
+    # main plot
+    ax = fig.add_subplot(111, position=[0.05, 0.05, 0.75, 0.85])  # [left, bottom, width, height]
     
-    # get intersection positions with WIDER spacing
+    # get intersection positions
     base_positions = network.get_positions()
     
-    # scale positions for wider spacing (2x spacing)
     positions = {}
     for int_id, (x, y) in base_positions.items():
-        positions[int_id] = (x * 5.0, y * 5.0)  # 5x spacing for clarity
+        positions[int_id] = (x * 25.0, y * 25.0)
 
     # extract queue data
     queue_samples = simulation_data.get('queue_samples', {})
     
-    # get max time from queue samples
     max_time = 0
     for lane_id, samples in queue_samples.items():
         if len(samples) > 0:
@@ -476,17 +465,13 @@ def create_traffic_animation(network, simulation_data: Dict, save_path: str = No
     if max_time == 0:
         max_time = config.SIMULATION_DURATION
     
-    # slower animation: sample every 5 seconds instead of 10
-    time_step = 5  # seconds per frame (slower = more detailed)
+    time_step = 5
     num_frames = int(max_time / time_step)
     
     def get_queue_at_time(lane_id, time):
-        """Interpolate queue length at specific time"""
         if lane_id not in queue_samples or len(queue_samples[lane_id]) == 0:
             return 0
-        
         samples = queue_samples[lane_id]
-        
         for i, (t, q) in enumerate(samples):
             if t >= time:
                 if i == 0:
@@ -494,142 +479,126 @@ def create_traffic_animation(network, simulation_data: Dict, save_path: str = No
                 t_prev, q_prev = samples[i - 1]
                 ratio = (time - t_prev) / (t - t_prev) if t != t_prev else 0
                 return q_prev + ratio * (q - q_prev)
-        
         return samples[-1][1] if samples else 0
     
     def get_light_phase_at_time(int_id, time):
-        """Get traffic light phase at specific time"""
         if 'light_states' in simulation_data and int_id in simulation_data['light_states']:
             states = simulation_data['light_states'][int_id]
-            
             for i, (t, phase) in enumerate(states):
                 if t >= time:
                     return states[i-1][1] if i > 0 else phase
-            
             return states[-1][1] if states else 0
         
-        # fallback: calculate from cycle time
         intersection = network.intersections[int_id]
         cycle_time = intersection.traffic_light.cycle_time
         time_in_cycle = time % cycle_time
         
         if time_in_cycle < intersection.traffic_light.green_ns:
-            return 0  # NS green
+            return 0
         elif time_in_cycle < intersection.traffic_light.green_ns + intersection.traffic_light.yellow:
-            return 1  # NS yellow
+            return 1
         elif time_in_cycle < intersection.traffic_light.green_ns + intersection.traffic_light.yellow + intersection.traffic_light.green_ew:
-            return 2  # EW green
+            return 2
         else:
-            return 3  # EW yellow
+            return 3
     
     def update(frame):
-        """Update function for each animation frame"""
+        fig.patches.clear()  # clear previous legend patches
+        fig.texts.clear()    # clear previous legend texts
         ax.clear()
-        ax_stats.clear()
-        
         current_time = frame * time_step
         
-        # --- MAIN TRAFFIC PLOT ---
-        
-        # set plot limits with extra padding
+        # plot limits with padding
         x_coords = [pos[0] for pos in positions.values()]
         y_coords = [pos[1] for pos in positions.values()]
-        x_min, x_max = min(x_coords) - 2.5, max(x_coords) + 2.5
-        y_min, y_max = min(y_coords) - 2.5, max(y_coords) + 2.5
+        x_min, x_max = min(x_coords) - 20.0, max(x_coords) + 20.0
+        y_min, y_max = min(y_coords) - 20.0, max(y_coords) + 20.0
         
         ax.set_xlim(x_min, x_max)
         ax.set_ylim(y_min, y_max)
         ax.set_aspect('equal')
-        ax.set_title(f'Traffic Network Animation\nSimulation Time: {current_time:.0f}s / {max_time:.0f}s ({current_time/60:.1f} min)', 
-                    fontsize=16, fontweight='bold', pad=15)
         
-        # draw roads as thick gray lines
-        for int_id, intersection in network.intersections.items():
-            x1, y1 = positions[int_id]
-            
-            for direction, connected_id in intersection.outgoing_connections.items():
-                if connected_id in positions:
-                    x2, y2 = positions[connected_id]
-                    ax.plot([x1, x2], [y1, y2], color='#7f8c8d', linewidth=20, 
-                           alpha=0.3, solid_capstyle='round', zorder=1)
-        
-        # collect stats for panel
+        # title with stats
         total_vehicles = 0
-        total_waiting = 0
         max_queue_current = 0
         green_lights = 0
         red_lights = 0
         
-        # draw each intersection
+        # draw roads
+        for int_id, intersection in network.intersections.items():
+            x1, y1 = positions[int_id]
+            for direction, connected_id in intersection.outgoing_connections.items():
+                if connected_id in positions:
+                    x2, y2 = positions[connected_id]
+                    ax.plot([x1, x2], [y1, y2], color='#7f8c8d', linewidth=40, 
+                           alpha=0.3, solid_capstyle='round', zorder=1)
+        
+        # draw intersections
         for int_id, intersection in network.intersections.items():
             x, y = positions[int_id]
             phase = get_light_phase_at_time(int_id, current_time)
             
-            # determine light colors for NS and EW
-            ns_color = '#ff0000'  # default red
+            # light colors
+            ns_color = '#ff0000'
             ew_color = '#ff0000'
             
-            if phase == 0:  # NS green
+            if phase == 0:
                 ns_color = '#00ff00'
                 ew_color = '#ff0000'
-            elif phase == 1:  # NS yellow
+            elif phase == 1:
                 ns_color = '#ffff00'
                 ew_color = '#ff0000'
-            elif phase == 2:  # EW green
+            elif phase == 2:
                 ns_color = '#ff0000'
                 ew_color = '#00ff00'
-            else:  # EW yellow
+            else:
                 ns_color = '#ff0000'
                 ew_color = '#ffff00'
             
-            # draw intersection center
-            center = plt.Circle((x, y), 0.3, color='#34495e', zorder=5)
+            # intersection center
+            center = plt.Circle((x, y), 0.8, color='#34495e', zorder=5)
             ax.add_patch(center)
-            
             ax.text(x, y, str(int_id), color='white', ha='center', va='center',
-                   fontweight='bold', fontsize=18, zorder=6)
+                   fontweight='bold', fontsize=32, zorder=6)
             
-            # queue bar positioning (larger spacing)
-            lane_offset = 1.5  # further from center
-            light_offset = 0.8  # traffic light position
-            bar_width = 0.5   # thicker bars
+            lane_offset = 10.0
+            light_offset = 3.5
+            bar_width = 0.6
             
             for direction, lane in intersection.lanes.items():
                 queue_length = get_queue_at_time(lane.lane_id, current_time)
-                
                 total_vehicles += int(queue_length)
                 max_queue_current = max(max_queue_current, queue_length)
                 
-                # queue bar length (scale to reasonable visual size)
-                max_bar_length = 2.0  # maximum visual length
-                bar_length = min(queue_length / 15.0, 1.0) * max_bar_length  # scale by 15 cars
+                # bar length
+                max_bar_length = 3.0
+                bar_length = min(queue_length / 20.0, 1.0) * max_bar_length
                 
-                # color based on queue length (absolute values)
                 if queue_length < 5:
-                    queue_color = '#2ecc71'  # green (< 5 cars)
+                    queue_color = '#2ecc71'
                 elif queue_length < 10:
-                    queue_color = '#f39c12'  # orange (5-10 cars)
+                    queue_color = '#f39c12'
                 else:
-                    queue_color = '#e74c3c'  # red (> 10 cars)
+                    queue_color = '#e74c3c'
                 
-                # direction-specific positioning
+                # queue bar starts right after the traffic light (light_offset + light_radius)
+                queue_start_offset = light_offset + 0.6  # start right after light
+                
                 if direction == 'N':
-                    # queue bar extends upward
-                    rect = plt.Rectangle((x - bar_width/2, y + lane_offset), bar_width, bar_length,
+                    # queue bar starts after the light
+                    rect = plt.Rectangle((x - bar_width/2, y + queue_start_offset), bar_width, bar_length,
                                         facecolor=queue_color, alpha=0.85, zorder=3,
-                                        edgecolor='black', linewidth=2)
+                                        edgecolor='black', linewidth=3)
                     ax.add_patch(rect)
                     
-                    # vehicle count label (above bar, no overlap)
                     if queue_length > 0:
-                        ax.text(x, y + lane_offset + bar_length + 0.4, f'{int(queue_length)}',
-                               fontsize=12, ha='center', va='bottom', fontweight='bold',
+                        ax.text(x, y + queue_start_offset + bar_length + 0.6, f'{int(queue_length)}',
+                               fontsize=16, ha='center', va='bottom', fontweight='bold',
                                bbox=dict(boxstyle='round,pad=0.4', facecolor='white', 
-                                       edgecolor='black', linewidth=1.5, alpha=0.95))
+                                       edgecolor='black', linewidth=2, alpha=0.95))
                     
-                    # traffic light
-                    light = plt.Circle((x, y + light_offset), 0.15, facecolor=ns_color,
-                                     edgecolor='black', linewidth=2, zorder=7)
+                    light = plt.Circle((x, y + light_offset), 0.5, facecolor=ns_color,
+                                     edgecolor='black', linewidth=3, zorder=7)
                     ax.add_patch(light)
                     if ns_color == '#00ff00':
                         green_lights += 1
@@ -637,35 +606,35 @@ def create_traffic_animation(network, simulation_data: Dict, save_path: str = No
                         red_lights += 1
                 
                 elif direction == 'S':
-                    rect = plt.Rectangle((x - bar_width/2, y - lane_offset - bar_length), bar_width, bar_length,
+                    rect = plt.Rectangle((x - bar_width/2, y - queue_start_offset - bar_length), bar_width, bar_length,
                                         facecolor=queue_color, alpha=0.85, zorder=3,
-                                        edgecolor='black', linewidth=2)
+                                        edgecolor='black', linewidth=3)
                     ax.add_patch(rect)
                     
                     if queue_length > 0:
-                        ax.text(x, y - lane_offset - bar_length - 0.25, f'{int(queue_length)}',
-                               fontsize=12, ha='center', va='top', fontweight='bold',
+                        ax.text(x, y - queue_start_offset - bar_length - 0.6, f'{int(queue_length)}',
+                               fontsize=16, ha='center', va='top', fontweight='bold',
                                bbox=dict(boxstyle='round,pad=0.4', facecolor='white',
-                                       edgecolor='black', linewidth=1.5, alpha=0.95))
+                                       edgecolor='black', linewidth=2, alpha=0.95))
                     
-                    light = plt.Circle((x, y - light_offset), 0.15, facecolor=ns_color,
-                                     edgecolor='black', linewidth=2, zorder=7)
+                    light = plt.Circle((x, y - light_offset), 0.5, facecolor=ns_color,
+                                     edgecolor='black', linewidth=3, zorder=7)
                     ax.add_patch(light)
                 
                 elif direction == 'E':
-                    rect = plt.Rectangle((x + lane_offset, y - bar_width/2), bar_length, bar_width,
+                    rect = plt.Rectangle((x + queue_start_offset, y - bar_width/2), bar_length, bar_width,
                                         facecolor=queue_color, alpha=0.85, zorder=3,
-                                        edgecolor='black', linewidth=2)
+                                        edgecolor='black', linewidth=3)
                     ax.add_patch(rect)
                     
                     if queue_length > 0:
-                        ax.text(x + lane_offset + bar_length + 0.4, y, f'{int(queue_length)}',
-                               fontsize=12, ha='left', va='center', fontweight='bold',
+                        ax.text(x + queue_start_offset + bar_length + 0.6, y, f'{int(queue_length)}',
+                               fontsize=16, ha='left', va='center', fontweight='bold',
                                bbox=dict(boxstyle='round,pad=0.4', facecolor='white',
-                                       edgecolor='black', linewidth=1.5, alpha=0.95))
+                                       edgecolor='black', linewidth=2, alpha=0.95))
                     
-                    light = plt.Circle((x + light_offset, y), 0.15, facecolor=ew_color,
-                                     edgecolor='black', linewidth=2, zorder=7)
+                    light = plt.Circle((x + light_offset, y), 0.5, facecolor=ew_color,
+                                     edgecolor='black', linewidth=3, zorder=7)
                     ax.add_patch(light)
                     if ew_color == '#00ff00':
                         green_lights += 1
@@ -673,80 +642,109 @@ def create_traffic_animation(network, simulation_data: Dict, save_path: str = No
                         red_lights += 1
                 
                 elif direction == 'W':
-                    rect = plt.Rectangle((x - lane_offset - bar_length, y - bar_width/2), bar_length, bar_width,
+                    rect = plt.Rectangle((x - queue_start_offset - bar_length, y - bar_width/2), bar_length, bar_width,
                                         facecolor=queue_color, alpha=0.85, zorder=3,
-                                        edgecolor='black', linewidth=2)
+                                        edgecolor='black', linewidth=3)
                     ax.add_patch(rect)
                     
                     if queue_length > 0:
-                        ax.text(x - lane_offset - bar_length - 0.25, y, f'{int(queue_length)}',
-                               fontsize=12, ha='right', va='center', fontweight='bold',
+                        ax.text(x - queue_start_offset - bar_length - 0.6, y, f'{int(queue_length)}',
+                               fontsize=16, ha='right', va='center', fontweight='bold',
                                bbox=dict(boxstyle='round,pad=0.4', facecolor='white',
-                                       edgecolor='black', linewidth=1.5, alpha=0.95))
+                                       edgecolor='black', linewidth=2, alpha=0.95))
                     
-                    light = plt.Circle((x - light_offset, y), 0.15, facecolor=ew_color,
-                                     edgecolor='black', linewidth=2, zorder=7)
+                    light = plt.Circle((x - light_offset, y), 0.5, facecolor=ew_color,
+                                     edgecolor='black', linewidth=3, zorder=7)
                     ax.add_patch(light)
         
-        # legend with clearer definitions
-        from matplotlib.patches import Rectangle, Circle
-        legend_elements = [
-            Circle((0, 0), 0.1, fc='#00ff00', ec='black', linewidth=1.5, label='Green Light (GO)'),
-            Circle((0, 0), 0.1, fc='#ffff00', ec='black', linewidth=1.5, label='Yellow Light (CAUTION)'),
-            Circle((0, 0), 0.1, fc='#ff0000', ec='black', linewidth=1.5, label='Red Light (STOP)'),
-            Rectangle((0, 0), 1, 1, fc='#2ecc71', ec='black', linewidth=1.5, label='Light Queue (0-5 cars)'),
-            Rectangle((0, 0), 1, 1, fc='#f39c12', ec='black', linewidth=1.5, label='Medium Queue (5-10 cars)'),
-            Rectangle((0, 0), 1, 1, fc='#e74c3c', ec='black', linewidth=1.5, label='Heavy Queue (>10 cars)')
-        ]
-        ax.legend(handles=legend_elements, loc='lower left', fontsize=11, 
-                 framealpha=0.98, edgecolor='black', fancybox=True, shadow=True)
+        # legend outside plot area
+        legend_x = 0.82
+        
+        # traffic Lights section
+        y_base = 0.75
+        fig.text(legend_x, y_base, '● Traffic Lights', fontsize=16, fontweight='bold', 
+                transform=fig.transFigure, ha='left', va='top')
+        
+        y_base -= 0.05
+        circle1 = plt.Circle((legend_x + 0.015, y_base), 0.012, fc='#00ff00', ec='black', linewidth=2,
+                            transform=fig.transFigure)
+        fig.patches.append(circle1)
+        fig.text(legend_x + 0.04, y_base, 'Green', fontsize=14, 
+                transform=fig.transFigure, ha='left', va='center')
+        
+        y_base -= 0.045
+        circle2 = plt.Circle((legend_x + 0.015, y_base), 0.012, fc='#ffff00', ec='black', linewidth=2,
+                            transform=fig.transFigure)
+        fig.patches.append(circle2)
+        fig.text(legend_x + 0.04, y_base, 'Yellow', fontsize=14, 
+                transform=fig.transFigure, ha='left', va='center')
+        
+        y_base -= 0.045
+        circle3 = plt.Circle((legend_x + 0.015, y_base), 0.012, fc='#ff0000', ec='black', linewidth=2,
+                            transform=fig.transFigure)
+        fig.patches.append(circle3)
+        fig.text(legend_x + 0.04, y_base, 'Red', fontsize=14, 
+                transform=fig.transFigure, ha='left', va='center')
+        
+        # queue bars section
+        y_base -= 0.08
+        fig.text(legend_x, y_base, '▬ Queue Length', fontsize=16, fontweight='bold', 
+                transform=fig.transFigure, ha='left', va='top')
+        
+        y_base -= 0.05
+        rect1 = plt.Rectangle((legend_x, y_base - 0.009), 0.025, 0.018, fc='#2ecc71', ec='black', linewidth=2,
+                             transform=fig.transFigure)
+        fig.patches.append(rect1)
+        fig.text(legend_x + 0.04, y_base, '0-5 cars', fontsize=14, 
+                transform=fig.transFigure, ha='left', va='center')
+        
+        y_base -= 0.045
+        rect2 = plt.Rectangle((legend_x, y_base - 0.009), 0.025, 0.018, fc='#f39c12', ec='black', linewidth=2,
+                             transform=fig.transFigure)
+        fig.patches.append(rect2)
+        fig.text(legend_x + 0.04, y_base, '5-10 cars', fontsize=14, 
+                transform=fig.transFigure, ha='left', va='center')
+        
+        y_base -= 0.045
+        rect3 = plt.Rectangle((legend_x, y_base - 0.009), 0.025, 0.018, fc='#e74c3c', ec='black', linewidth=2,
+                             transform=fig.transFigure)
+        fig.patches.append(rect3)
+        fig.text(legend_x + 0.04, y_base, '>10 cars', fontsize=14, 
+                transform=fig.transFigure, ha='left', va='center')
+        
+        # stats section
+        y_base -= 0.08
+        fig.text(legend_x, y_base, 'Statistics', fontsize=16, fontweight='bold', 
+                transform=fig.transFigure, ha='left', va='top')
+        
+        y_base -= 0.045
+        fig.text(legend_x, y_base, f'Time: {current_time:.0f}s', fontsize=14, 
+                transform=fig.transFigure, ha='left', va='top')
+        
+        y_base -= 0.04
+        fig.text(legend_x, y_base, f'Total Queue: {total_vehicles}', fontsize=14, 
+                transform=fig.transFigure, ha='left', va='top')
+        
+        # title
+        status_text = "FLOWING" if max_queue_current < 10 else "CONGESTED"
+        ax.set_title(f'Traffic Network Animation | Time: {current_time:.0f}s ({current_time/60:.1f} min) | {status_text}',
+                    fontsize=20, fontweight='bold', pad=25)
         
         ax.set_xticks([])
         ax.set_yticks([])
         ax.set_facecolor('#ecf0f1')
         ax.grid(False)
-        
-        # --- STATISTICS PANEL ---
-        
-        ax_stats.axis('off')
-        
-        stats_text = f"""
-NETWORK STATISTICS
-
-Time Elapsed:
-  {current_time:.0f}s ({current_time/60:.1f} min)
-
-Total Vehicles Waiting:
-  {total_vehicles} cars
-
-Max Queue Length:
-  {int(max_queue_current)} cars
-
-Traffic Lights:
-  🟢 Green: {green_lights}
-  🔴 Red: {red_lights}
-
-Network Status:
-  {"🟢 FLOWING" if max_queue_current < 10 else "🔴 CONGESTED"}
-"""
-        
-        ax_stats.text(0.1, 0.95, stats_text, transform=ax_stats.transAxes,
-                     fontsize=12, verticalalignment='top', fontfamily='monospace',
-                     bbox=dict(boxstyle='round,pad=1', facecolor='white', 
-                             edgecolor='black', linewidth=2, alpha=0.95))
     
-    # create animation with slower frame rate (30 fps for smooth playback)
-    print(f"Creating high-quality traffic animation with {num_frames} frames...")
+    print(f"Creating MEGA-SPACED traffic animation with {num_frames} frames...")
     print(f"Animation will be {num_frames/30:.1f} seconds long at 30 fps")
     
     anim = animation.FuncAnimation(fig, update, frames=num_frames, 
-                                  interval=50,  # 50ms = 20 fps during preview
-                                  repeat=True, blit=False)
+                                  interval=50, repeat=True, blit=False)
     
     if save_path:
         try:
             print(f"Saving animation to {save_path} (requires ffmpeg)...")
-            anim.save(save_path, writer='ffmpeg', fps=30, dpi=120, bitrate=2000)
+            anim.save(save_path, writer='ffmpeg', fps=30, dpi=120, bitrate=2500)
             print(f"[SUCCESS] High-quality animation saved to {save_path}")
             plt.close(fig)
         except Exception as e:
