@@ -8,26 +8,45 @@ import os
 def plot_optimization_convergence(pso_history: Dict, aco_history: Dict = None, 
                                    save_path: str = None):
     """
-    Plot convergence curves for PSO (and optionally ACO).
+    Plot convergence curves for PSO and/or ACO.
     Shows how objective function improves over iterations.
+    Works with either or both histories.
     """
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
     
-    # PSO convergence
-    ax1.plot(pso_history['iterations'], pso_history['best_scores'], 
-             'b-', linewidth=2, label='Best Score')
-    ax1.plot(pso_history['iterations'], pso_history['avg_scores'], 
-             'b--', alpha=0.6, label='Average Score')
+    # --- LEFT PLOT: individual convergence (PSO or ACO) ---
+    if pso_history is not None:
+        ax1.plot(pso_history['iterations'], pso_history['best_scores'],
+                'b-', linewidth=2, label='PSO Best Score')
+        ax1.plot(pso_history['iterations'], pso_history['avg_scores'],
+                'b--', alpha=0.6, label='PSO Average Score')
+        ax1.set_title('PSO Convergence', fontsize=14, fontweight='bold')
+    
+    if aco_history is not None:
+        ax1.plot(aco_history['iterations'], aco_history['best_scores'],
+                'g-', linewidth=2, label='ACO Best Score')
+        ax1.plot(aco_history['iterations'], aco_history['avg_scores'],
+                'g--', alpha=0.6, label='ACO Average Score')
+        ax1.set_title('ACO Convergence', fontsize=14, fontweight='bold')
+
+    if pso_history is not None and aco_history is not None:
+        ax1.set_title('PSO vs ACO Convergence', fontsize=14, fontweight='bold')
+
     ax1.set_xlabel('Iteration', fontsize=12)
     ax1.set_ylabel('Objective Function Value', fontsize=12)
     ax1.set_title('PSO Convergence', fontsize=14, fontweight='bold')
     ax1.legend()
     ax1.grid(True, alpha=0.3)
     
-    # TODO: add ACO convergence if provided
-    # comparison plot if only PSO
-    ax2.plot(pso_history['iterations'], pso_history['best_scores'], 
-                'g-', linewidth=2, label='PSO Best')
+    # --- RIGHT PLOT: best score progress comparison ---
+    if pso_history is not None:
+        ax2.plot(pso_history['iterations'], pso_history['best_scores'],
+                'b-', linewidth=2, label='PSO Best')
+
+    if aco_history is not None:
+        ax2.plot(aco_history['iterations'], aco_history['best_scores'],
+                'g-', linewidth=2, label='ACO Best')
+
     ax2.set_xlabel('Iteration', fontsize=12)
     ax2.set_ylabel('Objective Function Value', fontsize=12)
     ax2.set_title('Best Solution Progress', fontsize=14, fontweight='bold')
@@ -246,12 +265,18 @@ def plot_queue_evolution(queue_data: Dict[int, List], save_path: str = None):
     plt.show()
 
 
-def generate_all_plots(baseline_metrics: Dict, pso_metrics: Dict, pso_history: Dict,
-                      baseline_timings: np.ndarray, optimized_timings: np.ndarray,
-                      num_intersections: int, output_dir: str, aco_metrics: Dict = None,
-                      aco_history: Dict = None):
+def generate_all_plots(baseline_metrics: Dict, 
+                       num_intersections: int,
+                       output_dir: str,
+                       pso_metrics: Dict = None, 
+                       aco_metrics: Dict = None,
+                       pso_history: Dict = None,
+                       aco_history: Dict = None,
+                       baseline_timings: np.ndarray = None, 
+                       optimized_timings: np.ndarray = None):
     """
     Generate and save all visualization plots.
+    Works with PSO only, ACO only, or both.
     """
     import os
 
@@ -273,7 +298,7 @@ def generate_all_plots(baseline_metrics: Dict, pso_metrics: Dict, pso_history: D
     print("Generating comparison plot...")
     plot_comparison_bars(
         baseline_metrics=baseline_metrics,
-        pso_metrics=pso_metrics,
+        pso_metrics=pso_metrics if pso_metrics is not None else baseline_metrics,
         aco_metrics=aco_metrics,
         save_path=os.path.join(output_dir, 'comparison.png')
     )
@@ -282,25 +307,27 @@ def generate_all_plots(baseline_metrics: Dict, pso_metrics: Dict, pso_history: D
     print("Generating improvement plot...")
     plot_improvement_percentages(
         baseline_metrics=baseline_metrics,
-        pso_metrics=pso_metrics,
+        pso_metrics=pso_metrics if pso_metrics is not None else baseline_metrics,
         aco_metrics=aco_metrics,
         save_path=os.path.join(output_dir, 'improvement.png')
     )
     
     # 4. signal timings
-    print("Generating signal timing plot...")
-    plot_signal_timings(
-        baseline_timings=baseline_timings,
-        optimized_timings=optimized_timings,
-        num_intersections=num_intersections,
-        save_path=os.path.join(output_dir, 'signal_timings.png')
-    )
+    if baseline_timings is not None and optimized_timings is not None:
+        print("Generating signal timing plot...")
+        plot_signal_timings(
+            baseline_timings=baseline_timings,
+            optimized_timings=optimized_timings,
+            num_intersections=num_intersections,
+            save_path=os.path.join(output_dir, 'signal_timings.png')
+        )
     
     # 5. queue evolution (if data available)
-    if 'queue_samples' in pso_metrics:
+    active_metrics = pso_metrics if pso_metrics is not None else aco_metrics
+    if active_metrics is not None and 'queue_samples' in active_metrics:
         print("Generating queue evolution plot...")
         plot_queue_evolution(
-            queue_data=pso_metrics['queue_samples'],
+            queue_data=active_metrics['queue_samples'],
             save_path=os.path.join(output_dir, 'queue_evolution.png')
         )
     
@@ -426,14 +453,223 @@ def plot_pso_particles_live(pso, iteration: int):
     fig.canvas.draw()
     fig.canvas.flush_events()
 
+    # save frame every iteration (for convergence animation)
+    import config
+    save_convergence_frame(fig, 'pso', iteration, config.OUTPUT_DIR)
+
     if iteration == pso.num_iterations - 1:  # last iteration
-        import config
         if not os.path.exists(config.OUTPUT_DIR):
             os.makedirs(config.OUTPUT_DIR)
         
         save_path = os.path.join(config.OUTPUT_DIR, 'pso_particles_final.png')
         fig.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"\n[SAVED] Final PSO particle plot saved to {save_path}")
+
+        # stitch all frames into MP4
+        stitch_convergence_animation('pso', config.OUTPUT_DIR)
+
+
+def plot_aco_archive_live(aco, iteration: int):
+    """
+    Real-time visualization of ACO archive (mirrors plot_pso_particles_live style).
+    Shows first 2 decision variables (Intersection 0: NS green, EW green).
+    """
+    # create figure on first call only
+    if not hasattr(plot_aco_archive_live, 'fig'):
+        plt.ion()
+        plot_aco_archive_live.fig, plot_aco_archive_live.axes = plt.subplots(1, 2, figsize=(15, 6))
+        plt.show(block=False)
+
+    fig = plot_aco_archive_live.fig
+    ax1, ax2 = plot_aco_archive_live.axes
+
+    ax1.clear()
+    ax2.clear()
+
+    # --- LEFT PLOT: Archive solutions scatter ---
+
+    # extract archive data
+    archive_scores = [score for score, _ in aco.archive]
+    archive_solutions = np.array([sol for _, sol in aco.archive])
+
+    # extract first 2 dimensions (Intersection 0: NS green, EW green)
+    if len(archive_solutions) > 0:
+        solutions_2d = archive_solutions[:, :2]
+
+        # color by fitness (darker = better, rank 0 = best)
+        scatter = ax1.scatter(
+            solutions_2d[:, 0], solutions_2d[:, 1],
+            c=archive_scores, cmap='RdYlGn_r', s=200, alpha=0.85,
+            edgecolors='black', linewidth=1.5,
+            vmin=min(archive_scores), vmax=max(archive_scores),
+            label=f'Archive (k={aco.archive_size})', zorder=5
+        )
+
+        # colorbar
+        if iteration == 0:
+            plot_aco_archive_live.cbar = plt.colorbar(scatter, ax=ax1)
+            plot_aco_archive_live.cbar.set_label('Fitness Score', fontsize=10)
+        else:
+            plot_aco_archive_live.cbar.update_normal(scatter)
+
+        # annotate rank on each solution
+        for rank, (sol, score) in enumerate(zip(solutions_2d, archive_scores)):
+            ax1.annotate(f'#{rank+1}', (sol[0], sol[1]),
+                        textcoords='offset points', xytext=(6, 6),
+                        fontsize=8, color='black', fontweight='bold')
+
+        # highlight global best (rank 1 = top of archive)
+        best_sol = solutions_2d[0]
+        ax1.scatter(best_sol[0], best_sol[1],
+                   c='red', s=450, alpha=1.0, marker='*',
+                   edgecolors='black', linewidth=2,
+                   label=f'Best (score={aco.global_best_score:.2f})', zorder=10)
+
+        # draw weights as circle sizes (bigger circle = higher weight)
+        weights = aco._compute_weights()
+        for i, (sol, w) in enumerate(zip(solutions_2d, weights)):
+            ax1.add_patch(plt.Circle(
+                (sol[0], sol[1]), radius=w * 15,
+                fill=False, edgecolor='blue', linewidth=1.5,
+                alpha=0.4, linestyle='--', zorder=3
+            ))
+
+    ax1.set_xlabel('Intersection 0: NS Green Time (s)', fontsize=11, fontweight='bold')
+    ax1.set_ylabel('Intersection 0: EW Green Time (s)', fontsize=11, fontweight='bold')
+    ax1.set_title(f'ACO Archive - Iteration {iteration + 1}/{aco.num_iterations}',
+                 fontsize=13, fontweight='bold')
+    ax1.legend(loc='upper left', fontsize=9, framealpha=0.9)
+    ax1.grid(True, alpha=0.3, linestyle='--')
+
+    # search bounds rectangle
+    rect = plt.Rectangle(
+        (aco.bounds[0], aco.bounds[0]),
+        aco.bounds[1] - aco.bounds[0],
+        aco.bounds[1] - aco.bounds[0],
+        fill=False, edgecolor='gray', linewidth=2, linestyle='--', zorder=1
+    )
+    ax1.add_patch(rect)
+
+    padding = 5
+    ax1.set_xlim(aco.bounds[0] - padding, aco.bounds[1] + padding)
+    ax1.set_ylim(aco.bounds[0] - padding, aco.bounds[1] + padding)
+
+    # --- RIGHT PLOT: Convergence curve (identical style to PSO) ---
+
+    iterations = aco.history['iterations']
+    best_scores = aco.history['best_scores']
+    avg_scores = aco.history['avg_scores']
+
+    ax2.plot(iterations, best_scores, 'b-', linewidth=2.5, label='Best Score',
+            marker='o', markersize=5, markerfacecolor='blue', markeredgecolor='white')
+    ax2.plot(iterations, avg_scores, 'orange', linewidth=2, linestyle='--', alpha=0.8,
+            label='Average Score', marker='s', markersize=4)
+
+    ax2.fill_between(iterations, best_scores, avg_scores, alpha=0.2, color='blue')
+
+    ax2.set_xlabel('Iteration', fontsize=11, fontweight='bold')
+    ax2.set_ylabel('Objective Function Value', fontsize=11, fontweight='bold')
+    ax2.set_title('Convergence Progress', fontsize=13, fontweight='bold')
+    ax2.legend(loc='upper right', fontsize=10)
+    ax2.grid(True, alpha=0.3, linestyle='--')
+
+    # annotate current best (identical to PSO version)
+    if len(best_scores) > 0:
+        improvement = ((best_scores[0] - best_scores[-1]) / best_scores[0] * 100) if best_scores[0] > 0 else 0
+        ax2.text(0.02, 0.98,
+                f'Current Best: {aco.global_best_score:.2f}\nImprovement: {improvement:.1f}%',
+                transform=ax2.transAxes, fontsize=10, fontweight='bold',
+                verticalalignment='top',
+                bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.7))
+
+    plt.tight_layout()
+    fig.canvas.draw()
+    fig.canvas.flush_events()
+
+    # save frame every iteration (for convergence animation)
+    import config
+    save_convergence_frame(fig, 'aco', iteration, config.OUTPUT_DIR)
+
+    # save on last iteration
+    if iteration == aco.num_iterations - 1:
+        if not os.path.exists(config.OUTPUT_DIR):
+            os.makedirs(config.OUTPUT_DIR)
+
+        save_path = os.path.join(config.OUTPUT_DIR, 'aco_archive_final.png')
+        fig.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"\n[SAVED] Final ACO archive plot saved to {save_path}")
+
+        # stitch all frames into MP4
+        stitch_convergence_animation('aco', config.OUTPUT_DIR)
+
+
+def save_convergence_frame(fig, method: str, iteration: int, output_dir: str):
+    """Save current figure as a frame for convergence animation."""
+    frames_dir = os.path.join(output_dir, f'{method}_convergence_frames')
+    if not os.path.exists(frames_dir):
+        os.makedirs(frames_dir)
+
+    frame_path = os.path.join(frames_dir, f'frame_{iteration:04d}.png')
+    fig.savefig(frame_path, dpi=120, bbox_inches='tight')
+    return frames_dir
+
+
+def stitch_convergence_animation(method: str, output_dir: str):
+    """
+    Stitch all saved convergence frames into MP4.
+    Called automatically after optimization finishes.
+    """
+    import glob
+
+    frames_dir = os.path.join(output_dir, f'{method}_convergence_frames')
+    frame_pattern = os.path.join(frames_dir, 'frame_*.png')
+    frames = sorted(glob.glob(frame_pattern))
+
+    if len(frames) == 0:
+        print(f"[!] No frames found in {frames_dir}")
+        return
+
+    print(f"\nStitching {len(frames)} frames into convergence animation...")
+
+    # load first frame to get dimensions
+    import matplotlib.image as mpimg
+    first_frame = mpimg.imread(frames[0])
+    h, w = first_frame.shape[:2]
+
+    fig, ax = plt.subplots(figsize=(w/100, h/100), dpi=100)
+    ax.axis('off')
+    plt.subplots_adjust(0, 0, 1, 1)
+
+    im = ax.imshow(first_frame)
+
+    def update_frame(i):
+        img = mpimg.imread(frames[i])
+        im.set_data(img)
+        return [im]
+
+    anim = animation.FuncAnimation(
+        fig, update_frame,
+        frames=len(frames),
+        interval=500,   # 500ms per frame = 2fps (slow enough to see each iteration)
+        blit=True
+    )
+
+    save_path = os.path.join(output_dir, f'{method}_convergence.mp4')
+
+    try:
+        anim.save(save_path, writer='ffmpeg', fps=2, dpi=100)
+        print(f"[SUCCESS] Convergence animation saved to {save_path}")
+
+        # cleanup frames folder
+        import shutil
+        shutil.rmtree(frames_dir)
+        print(f"[CLEANUP] Removed frames folder: {frames_dir}")
+
+    except Exception as e:
+        print(f"[FAILED] Could not stitch animation: {e}")
+        print(f"  Individual frames saved in: {frames_dir}")
+
+    plt.close(fig)
 
 
 def create_traffic_animation(network, simulation_data: Dict, save_path: str = None):

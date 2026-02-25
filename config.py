@@ -75,11 +75,12 @@ PSO_CONFIG = {
 # --- Optimization parameters (ACO)
 
 ACO_CONFIG = {
-    'n_ants': 10,               # Same as PSO num_particles (fair comparison)
-    'archive_size': 10,         # k - solution memory pool
-    'q': 0.5,                   # Locality (small = exploit best, large = explore)
-    'xi': 0.85,                 # Evaporation rate (noise shrink factor)
-    'num_iterations': 20,       # Same as PSO (fair comparison)
+    'n_ants': 10,                                   # Same as PSO num_particles (fair comparison)
+    'archive_size': 10,                             # k - solution memory pool
+    'q': 0.5,                                       # Locality (small = exploit best, large = explore)
+    'xi': 0.85,                                     # Evaporation rate (noise shrink factor)
+    'num_iterations': 20,                           # Same as PSO (fair comparison)
+    'bounds': (MIN_GREEN_TIME, MAX_GREEN_TIME)      # Search space
 }
 
 # --- Objective function weights

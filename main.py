@@ -1,17 +1,18 @@
 import numpy as np
-from typing import Dict
-
 import config
 import os
+import argparse
+from typing import Dict
+
 from network import Network
 from simulation import run_multiple_simulations
 from metrics import calculate_objective_function, format_metrics_report, calculate_improvement
-from optimization import PSO
+from optimization import PSO, ACO
 from visualization import generate_all_plots, create_traffic_animation
 
 
 class ObjectiveFunctionWrapper:
-    """Picklable wrapper for PSO objective function evaluation."""
+    """Picklable wrapper for objective function evaluation (PSO & ACO)."""
     
     def __init__(self, network: Network):
         self.network = network
@@ -147,43 +148,92 @@ def optimize_with_pso(network: Network) -> tuple:
     return best_metrics, best_score, best_timings, pso.get_history()
 
 
-# TODO: add ACO
+def optimize_with_aco(network: Network) -> tuple:
+    """Optimize signal timings using Ant Colony Optimization (ACOR)."""
+    num_variables = config.NUM_INTERSECTIONS * 2
+    objective_function = ObjectiveFunctionWrapper(network)
+    
+    aco = ACO(
+        objective_function=objective_function,
+        num_variables=num_variables,
+        bounds=config.ACO_CONFIG['bounds'],
+        config=config.ACO_CONFIG
+    )
+    
+    best_timings, best_score = aco.optimize(verbose=config.VERBOSE)
+    
+    network.update_signal_timings(best_timings)
+    best_metrics = run_multiple_simulations(
+        network=network,
+        num_runs=config.NUM_SIMULATION_RUNS,
+        duration=config.SIMULATION_DURATION,
+        warmup=config.WARMUP_PERIOD,
+        random_seed=config.RANDOM_SEED,
+        verbose=config.VERBOSE
+    )
+    
+    print(f"\n{'~' * 5} ACO RESULTS {'~' * 5}")
+    print(f"Optimized timings: {best_timings}")
+    print(format_metrics_report(best_metrics, best_score))
+    
+    return best_metrics, best_score, best_timings, aco.get_history()
 
-def compare_results(baseline_metrics: Dict, pso_metrics: Dict, aco_metrics: Dict = None):
+
+def compare_results(baseline_metrics: Dict, optimized_metrics: Dict, method: str):
     """
-    Print comparison table of all methods.
+    Print comparison table of baseline vs chosen method.
     """
-    print(f"{'~' * 5} FINAL COMPARISON {'~' * 5}")
+    print(f"{'~' * 5} FINAL COMPARISON (Baseline vs {method.upper()}) {'~' * 5}")
     
     # calculate improvements
-    pso_improvements = calculate_improvement(baseline_metrics, pso_metrics)
+    improvements = calculate_improvement(baseline_metrics, optimized_metrics)
     
-    print(f"\n{'Metric':<30} {'Baseline':<15} {'PSO':<15} {'Improvement':<15}")
+    print(f"\n{'Metric':<30} {'Baseline':<15} {method.upper():<15} {'Improvement':<15}")
     print("-" * 75)
     
     print(f"{'Avg Waiting Time (s)':<30} "
           f"{baseline_metrics['avg_waiting_time']:<15.2f} "
-          f"{pso_metrics['avg_waiting_time']:<15.2f} "
-          f"{pso_improvements.get('avg_waiting_time', 0):<15.2f}%")
+          f"{optimized_metrics['avg_waiting_time']:<15.2f} "
+          f"{improvements.get('avg_waiting_time', 0):<15.2f}%")
     
     print(f"{'Max Queue Length':<30} "
           f"{baseline_metrics['max_queue_length']:<15.1f} "
-          f"{pso_metrics['max_queue_length']:<15.1f} "
-          f"{pso_improvements.get('max_queue_length', 0):<15.2f}%")
+          f"{optimized_metrics['max_queue_length']:<15.1f} "
+          f"{improvements.get('max_queue_length', 0):<15.2f}%")
     
-    # TODO: ACO
     print("~" * 60 + "\n")
 
 
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description='Traffic Signal Optimization',
+        formatter_class=argparse.RawTextHelpFormatter
+    )
+    parser.add_argument(
+        '--method',
+        type=str,
+        choices=['pso', 'aco'],
+        default='pso',
+        help='Optimization method to use:\n'
+             '  pso - Particle Swarm Optimization\n'
+             '  aco - Ant Colony Optimization (ACOR)\n'
+             '(default: pso)'
+    )
+    return parser.parse_args()
+
+
 def main():
-    """
-    Main execution workflow.
-    """
+    """Main execution workflow."""
+    args = parse_args()
+    method = args.method
+
     if not os.path.exists(config.OUTPUT_DIR):
         os.makedirs(config.OUTPUT_DIR)
 
     print(f"\n{'~' * 5} TRAFFIC SIGNAL OPTIMIZATION {'~' * 5}")
-    print("M/M/1 Queueing Model + PSO Optimization")
+    print(f"Method: {method.upper()}")
+    print(f"M/M/1 Queueing Model + {method.upper()} Optimization")
     print(f"{'~' * 60}")
 
     network = create_network()
@@ -191,19 +241,24 @@ def main():
     # run baseline
     baseline_metrics, baseline_obj, baseline_timings = run_baseline(network)
     
-    # optimize with PSO
-    pso_metrics, pso_obj, pso_timings, pso_history = optimize_with_pso(network)
+    # optimize with chose method
+    if method == 'pso':
+        opt_metrics, opt_obj, opt_timings, opt_history = optimize_with_pso(network)
+    elif method == 'aco':
+        opt_metrics, opt_obj, opt_timings, opt_history = optimize_with_aco(network)
 
     # compare results
-    compare_results(baseline_metrics, pso_metrics)
+    compare_results(baseline_metrics, opt_metrics, method)
 
     if config.SAVE_PLOTS:
         generate_all_plots(
             baseline_metrics=baseline_metrics,
-            pso_metrics=pso_metrics,
-            pso_history=pso_history,
+            pso_metrics=opt_metrics if method == 'pso' else None,
+            aco_metrics=opt_metrics if method == 'aco' else None,
+            pso_history=opt_history if method == 'pso' else None,
+            aco_history=opt_history if method == 'aco' else None,
             baseline_timings=baseline_timings,
-            optimized_timings=pso_timings,
+            optimized_timings=opt_timings,
             num_intersections=config.NUM_INTERSECTIONS,
             output_dir=config.OUTPUT_DIR
         )
@@ -211,8 +266,8 @@ def main():
         print("\nGenerating traffic animation...")
         create_traffic_animation(
             network=network,
-            simulation_data=pso_metrics,  # has queue_samples and light_states
-            save_path=os.path.join(config.OUTPUT_DIR, 'traffic_animation.mp4')
+            simulation_data=opt_metrics,  # has queue_samples and light_states
+            save_path=os.path.join(config.OUTPUT_DIR, f'traffic_animation_{method}.mp4')
         )
 
         # keep plots visible
