@@ -13,7 +13,18 @@ NETWORK_TOPOLOGY = {
 # --- Traffic parameters (M/M/1 queue)
 # Arrival rates (λ) - vehicles per second for each lane
 # Lower values = less traffic, higher = more congestion
-ARRIVAL_RATE = 0.2 # vehicles/second (720 vehicles/hour per lane)
+ARRIVAL_RATE = 0.35 # vehicles/second (720 vehicles/hour per lane)
+
+# Asymmetric traffic (realistic scenario) - COMMENT OUT to use ARRIVAL_RATE
+LANE_ARRIVAL_RATES = {
+    0: {'N': 0.35, 'S': 0.38, 'E': 0.39, 'W': 0.36},  # Higher load
+    1: {'N': 0.38, 'S': 0.35, 'E': 0.36, 'W': 0.39},  
+    2: {'N': 0.39, 'S': 0.36, 'E': 0.35, 'W': 0.38},  
+    3: {'N': 0.36, 'S': 0.39, 'E': 0.38, 'W': 0.35}   # ρ ≈ 0.95
+}
+
+# Use asymmetric rates if defined, otherwise uniform
+USE_ASYMMETRIC_TRAFFIC = True  # set to False to use uniform ARRIVAL_RATE
 
 # Service rates (μ) - vehicles per second that can pass through green light
 # Dependent on green light duration and intersection capacity / saturation flow rate
@@ -33,28 +44,28 @@ YELLOW_TIME = 3             # yellow light transition (fixed, not optimized)
 INITIAL_CYCLE_TIME = INITIAL_GREEN_TIME + INITIAL_RED_TIME + YELLOW_TIME
 
 # Optimization bounds for green light duration
-MIN_GREEN_TIME = 30  # minimum green time (safety constraint)
+MIN_GREEN_TIME = 20  # minimum green time (safety constraint)
 MAX_GREEN_TIME = 90  # maximum green time (to prevent excessive wait times)
 
 # --- Simulation parameters
 
 # How long to run each simulation (in seconds)
-SIMULATION_DURATION = 3600  # 1 hour of simulated traffic
+SIMULATION_DURATION = 1800  # 30 minutes of simulated traffic
 
 # Warmup period (seconds) - to let traffic stabilize before measurements
-WARMUP_PERIOD = 600  # 10 minutes
+WARMUP_PERIOD = 60  # 5 minutes
 
 # Random seed for reproducibility
 RANDOM_SEED = 42
 
 # Number of simulation runs for averaging results (handles stochastic variation)
-NUM_SIMULATION_RUNS = 10
+NUM_SIMULATION_RUNS = 5 # (3600 SD, NSR 10 previous)
 
 # --- Optimization parameters (PSO)
 
 PSO_CONFIG = {
-    'num_particles': 20,        # Swarm size
-    'num_iterations': 50,       # How many generations
+    'num_particles': 10,        # Swarm size
+    'num_iterations': 20,       # How many generations
     'w': 0.7,                   # Inertia weight (momentum)
     'c1': 1.5,                  # Cognitive coefficient (personal best)
     'c2': 1.5,                  # Social coefficient (global best)
@@ -64,12 +75,11 @@ PSO_CONFIG = {
 # --- Optimization parameters (ACO)
 
 ACO_CONFIG = {
-    'num_ants': 20,
-    'num_iterations': 50,
-    'alpha': 1.0,               # Pheromone importance
-    'beta': 2.0,                # Heuristic importance
-    'evaporation_rate': 0.1,
-    'pheromone_constant': 100
+    'n_ants': 10,               # Same as PSO num_particles (fair comparison)
+    'archive_size': 10,         # k - solution memory pool
+    'q': 0.5,                   # Locality (small = exploit best, large = explore)
+    'xi': 0.85,                 # Evaporation rate (noise shrink factor)
+    'num_iterations': 20,       # Same as PSO (fair comparison)
 }
 
 # --- Objective function weights
@@ -87,7 +97,7 @@ MAX_QUEUE_THRESHOLD = 50  # vehicles
 # --- Visualization parameters
 
 # Whether to show plots during optimization (slows down, but informative)
-SHOW_PLOTS_DURING_OPT = False
+SHOW_PLOTS_DURING_OPT = True
 
 # Whether to save plots to files
 SAVE_PLOTS = True
