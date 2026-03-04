@@ -306,9 +306,6 @@ def main():
                 simulation_data=opt_metrics,  # has queue_samples and light_states
                 save_path=os.path.join(config.OUTPUT_DIR, f'traffic_animation_{method}.mp4')
             )
-
-            # keep plots visible
-            import matplotlib.pyplot as plt
         
         print(f"\n{'~' * 5} OPTIMIZATION COMPLETE {'~' * 5}")
         print(f"Results saved to '{config.OUTPUT_DIR}/' directory")
