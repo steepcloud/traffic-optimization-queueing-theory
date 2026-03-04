@@ -58,8 +58,6 @@ def plot_optimization_convergence(pso_history: Dict, aco_history: Dict = None,
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"Saved convergence plot to {save_path}")
-    
-    plt.show()
 
 
 def plot_comparison_bars(baseline_metrics: Dict, pso_metrics: Dict, 
@@ -115,8 +113,6 @@ def plot_comparison_bars(baseline_metrics: Dict, pso_metrics: Dict,
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"Saved comparison plot to {save_path}")
-    
-    plt.show()
 
 
 def plot_improvement_percentages(baseline_metrics: Dict, pso_metrics: Dict, 
@@ -178,8 +174,6 @@ def plot_improvement_percentages(baseline_metrics: Dict, pso_metrics: Dict,
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"Saved improvement plot to {save_path}")
-    
-    plt.show()
 
 
 def plot_signal_timings(baseline_timings: np.ndarray, optimized_timings: np.ndarray,
@@ -229,8 +223,6 @@ def plot_signal_timings(baseline_timings: np.ndarray, optimized_timings: np.ndar
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"Saved signal timing plot to {save_path}")
-    
-    plt.show()
 
 
 def plot_queue_evolution(queue_data: Dict[int, List], save_path: str = None):
@@ -261,8 +253,6 @@ def plot_queue_evolution(queue_data: Dict[int, List], save_path: str = None):
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"Saved queue evolution plot to {save_path}")
-    
-    plt.show()
 
 
 def generate_all_plots(baseline_metrics: Dict, 
@@ -971,7 +961,7 @@ def create_traffic_animation(network, simulation_data: Dict, save_path: str = No
         ax.set_facecolor('#ecf0f1')
         ax.grid(False)
     
-    print(f"Creating MEGA-SPACED traffic animation with {num_frames} frames...")
+    print(f"Creating traffic animation with {num_frames} frames...")
     print(f"Animation will be {num_frames/30:.1f} seconds long at 30 fps")
     
     anim = animation.FuncAnimation(fig, update, frames=num_frames, 

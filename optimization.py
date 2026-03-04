@@ -147,7 +147,7 @@ class PSO:
                         print(f"Recent improvement: {recent_improvement*100:.2f}% < {self.min_improvement*100:.2f}% threshold")
                     break  # exit optimization loop
 
-            # live visualization (TODO: maybe add option to disable)
+            # live visualization
             if verbose >= 1:
                 if config.SHOW_PLOTS_DURING_OPT:
                     from visualization import plot_pso_particles_live

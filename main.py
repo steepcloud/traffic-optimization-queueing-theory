@@ -233,7 +233,7 @@ def main():
 
     print(f"\n{'~' * 5} TRAFFIC SIGNAL OPTIMIZATION {'~' * 5}")
     print(f"Method: {method.upper()}")
-    print(f"M/M/1 Queueing Model + {method.upper()} Optimization")
+    print(f"M/G/1 Queueing Model + {method.upper()} Optimization")
     print(f"{'~' * 60}")
 
     network = create_network()
@@ -241,7 +241,7 @@ def main():
     # run baseline
     baseline_metrics, baseline_obj, baseline_timings = run_baseline(network)
     
-    # optimize with chose method
+    # optimize with chosen method
     if method == 'pso':
         opt_metrics, opt_obj, opt_timings, opt_history = optimize_with_pso(network)
     elif method == 'aco':

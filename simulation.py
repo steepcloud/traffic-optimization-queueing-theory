@@ -26,7 +26,8 @@ class Vehicle:
 class TrafficSimulation:
     """
     Main simulation engine using SimPy.
-    Implements M/M/1 queueuing for each lane.
+    Implements M/G/1 queueing for each lane.
+    Erlang-k inter-arrival and service times model realistic traffic platooning.
     """
 
     def __init__(self, network: Network, duration: float, warmup: float = 0,
@@ -65,6 +66,7 @@ class TrafficSimulation:
         for int_id in network.intersections.keys():
             self.light_state_samples[int_id] = []
         
+
     def run(self) -> Dict:
         """
         Run the simulation and return performance metrics.
@@ -94,6 +96,7 @@ class TrafficSimulation:
         # calculate and return metrics
         return self.calculate_metrics()
 
+
     def traffic_light_controller(self, intersection: Intersection):
         """
         Process that controls traffic light phase changes.
@@ -118,7 +121,9 @@ class TrafficSimulation:
 
             # move to the next phase
             light.current_phase = (light.current_phase + 1) % 4 # assuming 4 phases, todo: maybe modify this
+    
 
+    '''
     def vehicle_arrivals(self, intersection: Intersection, lane: Lane):
         """
         Process that generates vehicle arrivals (Poisson process).
@@ -143,32 +148,53 @@ class TrafficSimulation:
 
             # start vehicle service process
             self.env.process(self.vehicle_service(intersection, lane, vehicle))
-
-    # todo: further m/g/1 implementation
     '''
+    
+    
     def vehicle_arrivals(self, intersection: Intersection, lane: Lane):
+        """
+        Process that generates vehicle arrivals (Erlang-k process).
+        M/G/1: Erlang-k inter-arrival times (models vehicle platooning).
+        k=1 -> exponential (M/M/1 behaviour)
+        k=2 -> Erlang-2 (moderate platooning, less variance)
+        """
         while True:
-        # Erlang-2 inter-arrival time (k=2 shape parameter)
-        # this models cars arriving in small groups (platooning)
-        k = 2 # shape paramter (higher = more regular arrivals)
-        theta = k / lane.arrival_rate # scale parameter
-        inter_arrival_time = rd.gammavariate(k, theta)
-        yield self.env.timeout(inter_arrival_time)
-        # etc etc we have the code above
-    '''
+            # Erlang-k inter-arrival time
+            k = config.ERLANG_K
+            theta = k / lane.arrival_rate  # scale parameter
+            inter_arrival_time = rd.gammavariate(k, theta)
+            yield self.env.timeout(inter_arrival_time)
+
+            # create new vehicle
+            vehicle = Vehicle(vehicle_id=self.vehicle_counter,
+                              arrival_time=self.env.now,
+                              lane=lane)
+            self.vehicle_counter += 1
+            self.vehicles.append(vehicle)
+
+            # add to lane queue
+            lane.current_queue_length += 1
+            lane.total_vehicles_arrived += 1
+
+            # start vehicle service process
+            self.env.process(self.vehicle_service(intersection, lane, vehicle))
+    
 
     def vehicle_service(self, intersection: Intersection, lane: Lane, vehicle: Vehicle):
         """
         Process for a vehicle waiting in queue and departing.
+        M/G/1: Erlang-k service times (G = General service distribution).
         """
         # wait until green light
         while not intersection.traffic_light.is_green(lane.direction):
-            yield self.env.timeout(0.1) # check every 0.1s
-        
-        # service time (exponential for M/M/1)
-        service_time = rd.expovariate(lane.service_rate)
+            yield self.env.timeout(0.1)  # check every 0.1s
+
+        # Erlang-k service time (G in M/G/1)
+        k = config.ERLANG_K
+        theta = k / lane.service_rate  # scale parameter
+        service_time = rd.gammavariate(k, theta)
         yield self.env.timeout(service_time)
-        
+
         # vehicle departs
         lane.current_queue_length -= 1
         lane.total_vehicles_served += 1
