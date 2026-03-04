@@ -1,14 +1,38 @@
 import numpy as np
 import config
 import os
+import sys
 import argparse
+import logging
 from typing import Dict
+from datetime import datetime
 
 from network import Network
 from simulation import run_multiple_simulations
 from metrics import calculate_objective_function, format_metrics_report, calculate_improvement
 from optimization import PSO, ACO
 from visualization import generate_all_plots, create_traffic_animation
+
+
+class TeeLogger:
+    """
+    Duplicates all stdout output to both terminal and log file.
+    """
+    def __init__(self, log_path: str):
+        self.terminal = sys.stdout
+        self.log = open(log_path, 'w', encoding='utf-8')
+    
+    def write(self, message):
+        self.terminal.write(message)
+        self.log.write(message)
+        self.log.flush()
+    
+    def flush(self):
+        self.terminal.flush()
+        self.log.flush()
+    
+    def close(self):
+        self.log.close()
 
 
 class ObjectiveFunctionWrapper:
@@ -230,53 +254,71 @@ def main():
 
     if not os.path.exists(config.OUTPUT_DIR):
         os.makedirs(config.OUTPUT_DIR)
-
-    print(f"\n{'~' * 5} TRAFFIC SIGNAL OPTIMIZATION {'~' * 5}")
-    print(f"Method: {method.upper()}")
-    print(f"M/G/1 Queueing Model + {method.upper()} Optimization")
-    print(f"{'~' * 60}")
-
-    network = create_network()
     
-    # run baseline
-    baseline_metrics, baseline_obj, baseline_timings = run_baseline(network)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_filename = f'run_{method}_{timestamp}.log'
+    log_path = os.path.join(config.OUTPUT_DIR, log_filename)
+
+    # redirect stdout to TeeLogger (terminal + file simultaneously)
+    logger = TeeLogger(log_path)
+    sys.stdout = logger
+
+    try:
+        print(f"Log file: {log_path}")
+        print(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"{'~' * 60}\n")
+            
+        print(f"\n{'~' * 5} TRAFFIC SIGNAL OPTIMIZATION {'~' * 5}")
+        print(f"Method: {method.upper()}")
+        print(f"M/G/1 Queueing Model + {method.upper()} Optimization")
+        print(f"{'~' * 60}")
+
+        network = create_network()
+        
+        # run baseline
+        baseline_metrics, baseline_obj, baseline_timings = run_baseline(network)
+        
+        # optimize with chosen method
+        if method == 'pso':
+            opt_metrics, opt_obj, opt_timings, opt_history = optimize_with_pso(network)
+        elif method == 'aco':
+            opt_metrics, opt_obj, opt_timings, opt_history = optimize_with_aco(network)
+
+        # compare results
+        compare_results(baseline_metrics, opt_metrics, method)
+
+        if config.SAVE_PLOTS:
+            generate_all_plots(
+                baseline_metrics=baseline_metrics,
+                pso_metrics=opt_metrics if method == 'pso' else None,
+                aco_metrics=opt_metrics if method == 'aco' else None,
+                pso_history=opt_history if method == 'pso' else None,
+                aco_history=opt_history if method == 'aco' else None,
+                baseline_timings=baseline_timings,
+                optimized_timings=opt_timings,
+                num_intersections=config.NUM_INTERSECTIONS,
+                output_dir=config.OUTPUT_DIR
+            )
+
+            print("\nGenerating traffic animation...")
+            create_traffic_animation(
+                network=network,
+                simulation_data=opt_metrics,  # has queue_samples and light_states
+                save_path=os.path.join(config.OUTPUT_DIR, f'traffic_animation_{method}.mp4')
+            )
+
+            # keep plots visible
+            import matplotlib.pyplot as plt
+        
+        print(f"\n{'~' * 5} OPTIMIZATION COMPLETE {'~' * 5}")
+        print(f"Results saved to '{config.OUTPUT_DIR}/' directory")
+        print(f"{'~' * 60}\n")
     
-    # optimize with chosen method
-    if method == 'pso':
-        opt_metrics, opt_obj, opt_timings, opt_history = optimize_with_pso(network)
-    elif method == 'aco':
-        opt_metrics, opt_obj, opt_timings, opt_history = optimize_with_aco(network)
-
-    # compare results
-    compare_results(baseline_metrics, opt_metrics, method)
-
-    if config.SAVE_PLOTS:
-        generate_all_plots(
-            baseline_metrics=baseline_metrics,
-            pso_metrics=opt_metrics if method == 'pso' else None,
-            aco_metrics=opt_metrics if method == 'aco' else None,
-            pso_history=opt_history if method == 'pso' else None,
-            aco_history=opt_history if method == 'aco' else None,
-            baseline_timings=baseline_timings,
-            optimized_timings=opt_timings,
-            num_intersections=config.NUM_INTERSECTIONS,
-            output_dir=config.OUTPUT_DIR
-        )
-
-        print("\nGenerating traffic animation...")
-        create_traffic_animation(
-            network=network,
-            simulation_data=opt_metrics,  # has queue_samples and light_states
-            save_path=os.path.join(config.OUTPUT_DIR, f'traffic_animation_{method}.mp4')
-        )
-
-        # keep plots visible
-        import matplotlib.pyplot as plt
-        plt.show(block=True)
-    
-    print(f"\n{'~' * 5} OPTIMIZATION COMPLETE {'~' * 5}")
-    print(f"Results saved to '{config.OUTPUT_DIR}/' directory")
-    print(f"{'~' * 60}\n")
+    finally:
+        # restore original stdout and close log file
+        sys.stdout = logger.terminal
+        logger.close()
+        print(f"\n[LOG] Full output saved to: {log_path}")
 
 
 if __name__ == "__main__":

@@ -58,6 +58,8 @@ def plot_optimization_convergence(pso_history: Dict, aco_history: Dict = None,
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"Saved convergence plot to {save_path}")
+    
+    plt.close()
 
 
 def plot_comparison_bars(baseline_metrics: Dict, pso_metrics: Dict, 
@@ -113,6 +115,8 @@ def plot_comparison_bars(baseline_metrics: Dict, pso_metrics: Dict,
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"Saved comparison plot to {save_path}")
+    
+    plt.close()
 
 
 def plot_improvement_percentages(baseline_metrics: Dict, pso_metrics: Dict, 
@@ -175,6 +179,8 @@ def plot_improvement_percentages(baseline_metrics: Dict, pso_metrics: Dict,
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"Saved improvement plot to {save_path}")
 
+    plt.close()
+
 
 def plot_signal_timings(baseline_timings: np.ndarray, optimized_timings: np.ndarray,
                        num_intersections: int, save_path: str = None):
@@ -224,6 +230,7 @@ def plot_signal_timings(baseline_timings: np.ndarray, optimized_timings: np.ndar
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"Saved signal timing plot to {save_path}")
 
+    plt.close()
 
 def plot_queue_evolution(queue_data: Dict[int, List], save_path: str = None):
     """
@@ -253,6 +260,8 @@ def plot_queue_evolution(queue_data: Dict[int, List], save_path: str = None):
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"Saved queue evolution plot to {save_path}")
+
+    plt.close()
 
 
 def generate_all_plots(baseline_metrics: Dict, 
