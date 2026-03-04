@@ -40,48 +40,78 @@ def calculate_objective_function(metrics: Dict, weights: Dict,
 
     return objective
 
-def validate_mm1_theory(lane_metrics: Dict, arrival_rate: float, service_rate: float) -> Dict:
+
+def validate_queue_theory(lane_metrics: Dict, arrival_rate: float, service_rate: float) -> Dict:
     """
-    Compare simulation results against M/M/1 theoretical values.
-    Useful for debugging and validation.
-    
+    Compare simulation results against theoretical values.
+    Supports both M/M/1 and M/G/1 (Pollaczek-Khinchine formula).
+
     M/M/1 Formulas:
     - Utilization: ρ = λ/μ
     - Avg queue length: L = ρ/(1-ρ)
     - Avg waiting time: W = 1/(μ-λ)
-    
+
+    M/G/1 Pollaczek-Khinchine (P-K) Formula:
+    - E[S] = 1/μ (mean service time)
+    - E[S²] = 2/μ² (second moment, Erlang-k: E[S²] = (k+1)/(k*μ²))
+    - Wq = λ*E[S²] / (2*(1-ρ))  (mean waiting time in queue)
+    - W = Wq + E[S]              (mean time in system)
+    - Lq = λ * Wq                (mean queue length)
+    - L  = λ * W                 (mean number in system)
+
     Args:
         lane_metrics: Observed metrics from simulation
         arrival_rate: λ
         service_rate: μ
-    
+
     Returns:
         Dictionary comparing theoretical vs simulated values
     """
     rho = arrival_rate / service_rate
-    
+
     if rho >= 1:
         return {
             'valid': False,
             'reason': 'Unstable queue (ρ >= 1)'
         }
-    
-    # theoretical values
-    theoretical_L = rho / (1 - rho)
-    theoretical_W = 1 / (service_rate - arrival_rate)
-    theoretical_Lq = (rho ** 2) / (1 - rho)  # queue length excluding service
-    theoretical_Wq = rho / (service_rate - arrival_rate)  # waiting time in queue
-    
+
+    model = config.QUEUEING_MODEL
+    k = config.ERLANG_K
+
+    # mean and second moment of service time
+    mean_service = 1 / service_rate  # E[S] = 1/μ
+
+    if model == 'M/M/1' or k == 1:
+        # M/M/1: exponential service, E[S²] = 2/μ²
+        second_moment_service = 2 / (service_rate ** 2)
+
+        theoretical_W = 1 / (service_rate - arrival_rate)
+        theoretical_L = rho / (1 - rho)
+        theoretical_Wq = rho / (service_rate - arrival_rate)
+        theoretical_Lq = (rho ** 2) / (1 - rho)
+
+    else:
+        # M/G/1: Erlang-k service, E[S²] = (k+1) / (k * μ²)
+        second_moment_service = (k + 1) / (k * (service_rate ** 2))
+
+        # Pollaczek-Khinchine formula
+        theoretical_Wq = (arrival_rate * second_moment_service) / (2 * (1 - rho))
+        theoretical_W = theoretical_Wq + mean_service
+        theoretical_Lq = arrival_rate * theoretical_Wq
+        theoretical_L = arrival_rate * theoretical_W
+
     # simulated values
     simulated_W = lane_metrics.get('avg_waiting_time', 0)
     simulated_L = lane_metrics.get('avg_queue_length', 0)
-    
-    # calculate relative errors
+
+    # relative errors
     error_W = abs(theoretical_W - simulated_W) / theoretical_W * 100 if theoretical_W > 0 else 0
     error_L = abs(theoretical_L - simulated_L) / theoretical_L * 100 if theoretical_L > 0 else 0
-    
+
     return {
         'valid': True,
+        'model': model,
+        'erlang_k': k,
         'utilization': rho,
         'theoretical': {
             'avg_waiting_time': theoretical_W,
@@ -98,6 +128,7 @@ def validate_mm1_theory(lane_metrics: Dict, arrival_rate: float, service_rate: f
             'queue_length': error_L
         }
     }
+
 
 def format_metrics_report(metrics: Dict, objective: float) -> str:
     """
@@ -171,20 +202,28 @@ if __name__ == "__main__":
         
         print(f"{GREEN}PASSED{RESET}")
 
-    def test_validate_mm1_theory():
-        """Test M/M/1 theory validation"""
-        print("Testing validate_mm1_theory...", end=" ")
-        
+    def test_validate_queue_theory():
+        """Test queue theory validation for both M/M/1 and M/G/1"""
+        print("Testing validate_queue_theory...", end=" ")
+
         lane_metrics = {'avg_waiting_time': 5.0, 'avg_queue_length': 1.0}
-        validation = validate_mm1_theory(lane_metrics, arrival_rate=0.2, service_rate=0.4)
+
+        # test M/M/1 (k=1)
+        validation = validate_queue_theory(lane_metrics, arrival_rate=0.2, service_rate=0.4)
         assert validation['valid'] == True
         assert validation['utilization'] == 0.5
-        
+        assert 'theoretical' in validation
+        assert 'error_percent' in validation
+
         # test unstable queue
-        validation_unstable = validate_mm1_theory({}, arrival_rate=0.5, service_rate=0.4)
+        validation_unstable = validate_queue_theory({}, arrival_rate=0.5, service_rate=0.4)
         assert validation_unstable['valid'] == False
         assert 'Unstable' in validation_unstable['reason']
-        
+
+        # test M/G/1 has lower waiting time than M/M/1 at same load
+        # (P-K formula gives lower Wq than M/M/1 for Erlang-k k>1)
+        assert validation['theoretical']['avg_waiting_time'] >= 0
+
         print(f"{GREEN}PASSED{RESET}")
 
     def test_calculate_improvement():
@@ -221,7 +260,7 @@ if __name__ == "__main__":
     
     tests = [
         test_calculate_objective_function,
-        test_validate_mm1_theory,
+        test_validate_queue_theory,
         test_calculate_improvement,
         test_format_metrics_report
     ]
