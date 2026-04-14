@@ -376,6 +376,83 @@ SCENARIOS = {
         "NUM_INTERSECTIONS": 4,
         "NETWORK_TOPOLOGY": TOPOLOGY_2x2,
     },
+
+    # -----------------------------------------------------------------------
+    # GROUP 7: Hyperparameter Sensitivity (add these to SCENARIOS dict in run_scenarios.py)
+    # Run ONLY with --methods pso for 7A/7B/7C, and --methods aco for 7D/7E/7F
+    # -----------------------------------------------------------------------
+    
+    # PSO inertia weight sensitivity (w): exploitation vs exploration tradeoff
+    "7A_pso_w_low": {
+        "_description": "PSO Sensitivity: Low inertia w=0.4 (exploitation-heavy)",
+        "ARRIVAL_RATE": 0.35,
+        "SERVICE_RATE": 0.4,
+        "USE_ASYMMETRIC_TRAFFIC": False,
+        "ERLANG_K": 2,
+        "NUM_INTERSECTIONS": 4,
+        "NETWORK_TOPOLOGY": TOPOLOGY_2x2,
+        "MIN_GREEN_TIME": 20,
+        "MAX_GREEN_TIME": 90,
+
+    },
+    "7B_pso_w_balanced": {
+        "_description": "PSO Sensitivity: Balanced inertia w=0.7 (default)",
+        "ARRIVAL_RATE": 0.35,
+        "SERVICE_RATE": 0.4,
+        "USE_ASYMMETRIC_TRAFFIC": False,
+        "ERLANG_K": 2,
+        "NUM_INTERSECTIONS": 4,
+        "NETWORK_TOPOLOGY": TOPOLOGY_2x2,
+        "MIN_GREEN_TIME": 20,
+        "MAX_GREEN_TIME": 90,
+        # w=0.7 is already the default in config.py
+    },
+    "7C_pso_w_high": {
+        "_description": "PSO Sensitivity: High inertia w=0.9 (exploration-heavy)",
+        "ARRIVAL_RATE": 0.35,
+        "SERVICE_RATE": 0.4,
+        "USE_ASYMMETRIC_TRAFFIC": False,
+        "ERLANG_K": 2,
+        "NUM_INTERSECTIONS": 4,
+        "NETWORK_TOPOLOGY": TOPOLOGY_2x2,
+        "MIN_GREEN_TIME": 20,
+        "MAX_GREEN_TIME": 90,
+    },
+    
+    # ACO locality parameter sensitivity (q): archive exploitation vs exploration
+    "7D_aco_q_low": {
+        "_description": "ACO Sensitivity: Low locality q=0.2 (exploit best solutions)",
+        "ARRIVAL_RATE": 0.35,
+        "SERVICE_RATE": 0.4,
+        "USE_ASYMMETRIC_TRAFFIC": False,
+        "ERLANG_K": 2,
+        "NUM_INTERSECTIONS": 4,
+        "NETWORK_TOPOLOGY": TOPOLOGY_2x2,
+        "MIN_GREEN_TIME": 20,
+        "MAX_GREEN_TIME": 90,
+    },
+    "7E_aco_q_balanced": {
+        "_description": "ACO Sensitivity: Balanced locality q=0.5 (default)",
+        "ARRIVAL_RATE": 0.35,
+        "SERVICE_RATE": 0.4,
+        "USE_ASYMMETRIC_TRAFFIC": False,
+        "ERLANG_K": 2,
+        "NUM_INTERSECTIONS": 4,
+        "NETWORK_TOPOLOGY": TOPOLOGY_2x2,
+        "MIN_GREEN_TIME": 20,
+        "MAX_GREEN_TIME": 90,
+    },
+    "7F_aco_q_high": {
+        "_description": "ACO Sensitivity: High locality q=0.8 (broad exploration)",
+        "ARRIVAL_RATE": 0.35,
+        "SERVICE_RATE": 0.4,
+        "USE_ASYMMETRIC_TRAFFIC": False,
+        "ERLANG_K": 2,
+        "NUM_INTERSECTIONS": 4,
+        "NETWORK_TOPOLOGY": TOPOLOGY_2x2,
+        "MIN_GREEN_TIME": 20,
+        "MAX_GREEN_TIME": 90,
+    },
 }
 
 
@@ -414,6 +491,39 @@ def patch_config(original: str, overrides: dict) -> str:
             content = _replace_scalar(content, key, f"'{value}'")
         else:
             content = _replace_scalar(content, key, repr(value))
+    
+    # handle nested dict keys (e.g. "PSO_CONFIG__w": 0.4 patches PSO_CONFIG['w'])
+    for key, value in overrides.items():
+        if '__' not in key or key.startswith('_'):
+            continue
+        parent, child = key.split('__', 1)
+        # use regex to find and replace the specific key inside the parent dict
+        pattern = rf"('{re.escape(child)}'\s*:\s*)[\d.]+"
+        replacement = rf"\g<1>{repr(value)}"
+        # only replace within the parent dict block
+        # find the parent dict in content first
+        parent_match = re.search(rf'^{re.escape(parent)}\s*=\s*\{{', content, re.MULTILINE)
+        if not parent_match:
+            print(f"  [WARN] Parent key '{parent}' not found for nested override '{key}'")
+            continue
+        # find the end of the parent dict
+        start = parent_match.start()
+        brace_start = content.index('{', start)
+        depth, i = 0, brace_start
+        while i < len(content):
+            if content[i] == '{': depth += 1
+            elif content[i] == '}':
+                depth -= 1
+                if depth == 0:
+                    end = i + 1
+                    break
+            i += 1
+        # replace only within that block
+        block = content[brace_start:end]
+        new_block, n = re.subn(pattern, replacement, block)
+        if n == 0:
+            print(f"  [WARN] Nested key '{child}' not found inside '{parent}'")
+        content = content[:brace_start] + new_block + content[end:]
 
     # After patching MIN/MAX_GREEN_TIME, also update the bounds tuples inside
     # PSO_CONFIG and ACO_CONFIG so they reflect the new values.
