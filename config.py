@@ -10,10 +10,17 @@ NETWORK_TOPOLOGY = {
     3: [1, 2]  # Intersection 3 connects to 1 (North) and 2 (West)
 }
 
-# --- Traffic parameters (M/M/1 queue)
+# --- Traffic parameters (M/G/1 queue)
 # Arrival rates (λ) - vehicles per second for each lane
 # Lower values = less traffic, higher = more congestion
 ARRIVAL_RATE = 0.35 # vehicles/second (720 vehicles/hour per lane)
+
+# Queueing model
+QUEUEING_MODEL = 'M/G/1'    # M/G/1
+ERLANG_K = 2                 # shape parameter for Erlang-k distribution
+                             # k=1 -> exponential (M/M/1)
+                             # k=2 -> Erlang-2 (M/G/1, moderate platooning)
+                             # k=5 -> nearly deterministic arrivals
 
 # Asymmetric traffic (realistic scenario) - COMMENT OUT to use ARRIVAL_RATE
 LANE_ARRIVAL_RATES = {

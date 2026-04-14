@@ -62,7 +62,7 @@ def plot_optimization_convergence(pso_history: Dict, aco_history: Dict = None,
     plt.close()
 
 
-def plot_comparison_bars(baseline_metrics: Dict, pso_metrics: Dict, 
+def plot_comparison_bars(baseline_metrics: Dict, pso_metrics: Dict = None, 
                         aco_metrics: Dict = None, save_path: str = None):
     """
     Bar chart comparing baseline vs optimized performance.
@@ -71,22 +71,36 @@ def plot_comparison_bars(baseline_metrics: Dict, pso_metrics: Dict,
     metric_labels = ['Avg Waiting Time (s)', 'Max Queue Length']
     
     x = np.arange(len(metrics_to_compare))
-    width = 0.25
+
+    num_methods = 1 + (pso_metrics is not None) + (aco_metrics is not None)
+    width = 0.8 / num_methods
+    offset = -0.4 + width / 2
     
     fig, ax = plt.subplots(figsize=(10, 6))
     
     baseline_values = [baseline_metrics[m] for m in metrics_to_compare]
-    pso_values = [pso_metrics[m] for m in metrics_to_compare]
+    bars = []
     
-    bars1 = ax.bar(x - width, baseline_values, width, label='Baseline', 
-                   color='#e74c3c', alpha=0.8)
-    bars2 = ax.bar(x, pso_values, width, label='PSO Optimized', 
-                   color='#3498db', alpha=0.8)
+    bars.append(ax.bar(
+        x + offset, baseline_values, width,
+        label='Baseline', color='#e74c3c', alpha=0.8
+    ))
+    offset += width
     
+    if pso_metrics is not None:
+        pso_values = [pso_metrics[m] for m in metrics_to_compare]
+        bars.append(ax.bar(
+            x + offset, pso_values, width,
+            label='PSO Optimized', color='#3498db', alpha=0.8
+        ))
+        offset += width
+
     if aco_metrics is not None:
         aco_values = [aco_metrics[m] for m in metrics_to_compare]
-        bars3 = ax.bar(x + width, aco_values, width, label='ACO Optimized', 
-                      color='#2ecc71', alpha=0.8)
+        bars.append(ax.bar(
+            x + offset, aco_values, width,
+            label='ACO Optimized', color='#2ecc71', alpha=0.8
+        ))
     
     ax.set_xlabel('Metric', fontsize=12, fontweight='bold')
     ax.set_ylabel('Value', fontsize=12, fontweight='bold')
@@ -97,18 +111,17 @@ def plot_comparison_bars(baseline_metrics: Dict, pso_metrics: Dict,
     ax.legend(fontsize=11)
     ax.grid(True, axis='y', alpha=0.3)
     
-    # add value labels on bars
-    def add_labels(bars):
-        for bar in bars:
+    for group in bars:
+        for bar in group:
             height = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width()/2., height,
-                   f'{height:.1f}',
-                   ha='center', va='bottom', fontsize=9)
-    
-    add_labels(bars1)
-    add_labels(bars2)
-    if aco_metrics is not None:
-        add_labels(bars3)
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                height,
+                f'{height:.1f}',
+                ha='center',
+                va='bottom',
+                fontsize=9
+            )
     
     plt.tight_layout()
     
@@ -119,7 +132,7 @@ def plot_comparison_bars(baseline_metrics: Dict, pso_metrics: Dict,
     plt.close()
 
 
-def plot_improvement_percentages(baseline_metrics: Dict, pso_metrics: Dict, 
+def plot_improvement_percentages(baseline_metrics: Dict, pso_metrics: Dict = None, 
                                  aco_metrics: Dict = None, save_path: str = None):
     """
     Show percentage improvement from baseline.
@@ -127,51 +140,58 @@ def plot_improvement_percentages(baseline_metrics: Dict, pso_metrics: Dict,
     metrics = ['avg_waiting_time', 'max_queue_length']
     metric_labels = ['Waiting Time', 'Queue Length']
     
-    # calculate improvements
-    pso_improvements = []
-    for m in metrics:
-        improvement = (baseline_metrics[m] - pso_metrics[m]) / baseline_metrics[m] * 100
-        pso_improvements.append(improvement)
-    
-    fig, ax = plt.subplots(figsize=(10, 6))
-    
     x = np.arange(len(metrics))
-    width = 0.35
     
-    bars1 = ax.bar(x, pso_improvements, width, label='PSO', 
-                   color='#3498db', alpha=0.8)
+    method_count = (pso_metrics is not None) + (aco_metrics is not None)
+    width = 0.8 / max(method_count, 1)
+    offset = -0.4 + width / 2
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    bars = []
+    
+    if pso_metrics is not None:
+        pso_improvements = [
+            (baseline_metrics[m] - pso_metrics[m]) / baseline_metrics[m] * 100
+            for m in metrics
+        ]
+        bars.append(ax.bar(
+            x + offset, pso_improvements, width,
+            label='PSO', color='#3498db', alpha=0.8
+        ))
+        offset += width
     
     if aco_metrics is not None:
-        aco_improvements = []
-        for m in metrics:
-            improvement = (baseline_metrics[m] - aco_metrics[m]) / baseline_metrics[m] * 100
-            aco_improvements.append(improvement)
-        
-        bars2 = ax.bar(x + width, aco_improvements, width, label='ACO', 
-                      color='#2ecc71', alpha=0.8)
+        aco_improvements = [
+            (baseline_metrics[m] - aco_metrics[m]) / baseline_metrics[m] * 100
+            for m in metrics
+        ]
+        bars.append(ax.bar(
+            x + offset, aco_improvements, width,
+            label='ACO', color='#2ecc71', alpha=0.8
+        ))
     
     ax.set_xlabel('Metric', fontsize=12, fontweight='bold')
     ax.set_ylabel('Improvement (%)', fontsize=12, fontweight='bold')
     ax.set_title('Optimization Improvement over Baseline', 
                  fontsize=14, fontweight='bold')
-    ax.set_xticks(x + width/2)
+    ax.set_xticks(x)
     ax.set_xticklabels(metric_labels)
     ax.legend(fontsize=11)
     ax.grid(True, axis='y', alpha=0.3)
     ax.axhline(y=0, color='k', linestyle='-', linewidth=0.5)
     
-    # add value labels
-    def add_labels(bars):
-        for bar in bars:
+    for group in bars:
+        for bar in group:
             height = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width() / 2., height,
-                   f'{height:.1f}%',
-                   ha='center', va='bottom' if height >= 0 else 'top', 
-                   fontsize=10, fontweight='bold')
-    
-    add_labels(bars1)
-    if aco_metrics is not None:
-        add_labels(bars2)
+            ax.text(
+                bar.get_x() + bar.get_width()/2,
+                height,
+                f'{height:.1f}%',
+                ha='center',
+                va='bottom' if height >= 0 else 'top',
+                fontsize=10,
+                fontweight='bold'
+            )
     
     plt.tight_layout()
     
@@ -297,7 +317,7 @@ def generate_all_plots(baseline_metrics: Dict,
     print("Generating comparison plot...")
     plot_comparison_bars(
         baseline_metrics=baseline_metrics,
-        pso_metrics=pso_metrics if pso_metrics is not None else baseline_metrics,
+        pso_metrics=pso_metrics,
         aco_metrics=aco_metrics,
         save_path=os.path.join(output_dir, 'comparison.png')
     )
@@ -306,7 +326,7 @@ def generate_all_plots(baseline_metrics: Dict,
     print("Generating improvement plot...")
     plot_improvement_percentages(
         baseline_metrics=baseline_metrics,
-        pso_metrics=pso_metrics if pso_metrics is not None else baseline_metrics,
+        pso_metrics=pso_metrics,
         aco_metrics=aco_metrics,
         save_path=os.path.join(output_dir, 'improvement.png')
     )
