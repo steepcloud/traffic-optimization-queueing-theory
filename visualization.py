@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import numpy as np
+import math
 from typing import Dict, List
 import os
 
@@ -207,8 +208,11 @@ def plot_signal_timings(baseline_timings: np.ndarray, optimized_timings: np.ndar
     """
     Compare baseline vs optimized signal timings for each intersection.
     """
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-    axes = axes.flatten()
+    rows = math.ceil(math.sqrt(num_intersections))
+    cols = math.ceil(num_intersections / rows)
+
+    fig, axes = plt.subplots(rows, cols, figsize=(cols * 6, rows * 5))
+    axes = np.array(axes).flatten()
     
     for i in range(num_intersections):
         ax = axes[i]
@@ -242,6 +246,10 @@ def plot_signal_timings(baseline_timings: np.ndarray, optimized_timings: np.ndar
                        f'{height:.1f}',
                        ha='center', va='bottom', fontsize=9)
     
+    # hide unused subplot slots
+    for j in range(num_intersections, len(axes)):
+        axes[j].axis('off')
+
     plt.suptitle('Traffic Signal Timing Comparison', 
                  fontsize=14, fontweight='bold', y=0.995)
     plt.tight_layout()
