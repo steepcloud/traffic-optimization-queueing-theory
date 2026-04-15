@@ -378,13 +378,16 @@ SCENARIOS = {
     },
 
     # -----------------------------------------------------------------------
-    # GROUP 7: Hyperparameter Sensitivity (add these to SCENARIOS dict in run_scenarios.py)
-    # Run ONLY with --methods pso for 7A/7B/7C, and --methods aco for 7D/7E/7F
+    # GROUP 7: Hyperparameter Sensitivity
+    # _methods locks each scenario to only run the relevant algorithm.
+    # 7A/7B/7C -> PSO only (vary inertia w)
+    # 7D/7E/7F -> ACO only (vary locality q)
     # -----------------------------------------------------------------------
-    
+
     # PSO inertia weight sensitivity (w): exploitation vs exploration tradeoff
     "7A_pso_w_low": {
         "_description": "PSO Sensitivity: Low inertia w=0.4 (exploitation-heavy)",
+        "_methods": ["pso"],
         "ARRIVAL_RATE": 0.35,
         "SERVICE_RATE": 0.4,
         "USE_ASYMMETRIC_TRAFFIC": False,
@@ -393,10 +396,11 @@ SCENARIOS = {
         "NETWORK_TOPOLOGY": TOPOLOGY_2x2,
         "MIN_GREEN_TIME": 20,
         "MAX_GREEN_TIME": 90,
-
+        "PSO_CONFIG__w": 0.4,
     },
     "7B_pso_w_balanced": {
         "_description": "PSO Sensitivity: Balanced inertia w=0.7 (default)",
+        "_methods": ["pso"],
         "ARRIVAL_RATE": 0.35,
         "SERVICE_RATE": 0.4,
         "USE_ASYMMETRIC_TRAFFIC": False,
@@ -405,10 +409,11 @@ SCENARIOS = {
         "NETWORK_TOPOLOGY": TOPOLOGY_2x2,
         "MIN_GREEN_TIME": 20,
         "MAX_GREEN_TIME": 90,
-        # w=0.7 is already the default in config.py
+        "PSO_CONFIG__w": 0.7,
     },
     "7C_pso_w_high": {
         "_description": "PSO Sensitivity: High inertia w=0.9 (exploration-heavy)",
+        "_methods": ["pso"],
         "ARRIVAL_RATE": 0.35,
         "SERVICE_RATE": 0.4,
         "USE_ASYMMETRIC_TRAFFIC": False,
@@ -417,11 +422,13 @@ SCENARIOS = {
         "NETWORK_TOPOLOGY": TOPOLOGY_2x2,
         "MIN_GREEN_TIME": 20,
         "MAX_GREEN_TIME": 90,
+        "PSO_CONFIG__w": 0.9,
     },
-    
+
     # ACO locality parameter sensitivity (q): archive exploitation vs exploration
     "7D_aco_q_low": {
         "_description": "ACO Sensitivity: Low locality q=0.2 (exploit best solutions)",
+        "_methods": ["aco"],
         "ARRIVAL_RATE": 0.35,
         "SERVICE_RATE": 0.4,
         "USE_ASYMMETRIC_TRAFFIC": False,
@@ -430,9 +437,11 @@ SCENARIOS = {
         "NETWORK_TOPOLOGY": TOPOLOGY_2x2,
         "MIN_GREEN_TIME": 20,
         "MAX_GREEN_TIME": 90,
+        "ACO_CONFIG__q": 0.2,
     },
     "7E_aco_q_balanced": {
         "_description": "ACO Sensitivity: Balanced locality q=0.5 (default)",
+        "_methods": ["aco"],
         "ARRIVAL_RATE": 0.35,
         "SERVICE_RATE": 0.4,
         "USE_ASYMMETRIC_TRAFFIC": False,
@@ -441,9 +450,11 @@ SCENARIOS = {
         "NETWORK_TOPOLOGY": TOPOLOGY_2x2,
         "MIN_GREEN_TIME": 20,
         "MAX_GREEN_TIME": 90,
+        "ACO_CONFIG__q": 0.5,
     },
     "7F_aco_q_high": {
         "_description": "ACO Sensitivity: High locality q=0.8 (broad exploration)",
+        "_methods": ["aco"],
         "ARRIVAL_RATE": 0.35,
         "SERVICE_RATE": 0.4,
         "USE_ASYMMETRIC_TRAFFIC": False,
@@ -452,6 +463,7 @@ SCENARIOS = {
         "NETWORK_TOPOLOGY": TOPOLOGY_2x2,
         "MIN_GREEN_TIME": 20,
         "MAX_GREEN_TIME": 90,
+        "ACO_CONFIG__q": 0.8,
     },
 }
 
@@ -656,7 +668,9 @@ def run_scenario(scenario_name: str, scenario: dict, methods: list,
         save_config(config_path, patched)
         print(f"  config.py patched OK")
 
-        for method in methods:
+        locked_methods = scenario.get('_methods', None)
+        effective_methods = locked_methods if locked_methods else methods
+        for method in effective_methods:
             print(f"\n  >>> Running --method {method.upper()} ...")
             result = subprocess.run(
                 [python_exe, "main.py", "--method", method],
