@@ -92,23 +92,23 @@ class PSO:
         
         for iteration in range(self.num_iterations):
             iteration_start = time.time()
-            
+
             # evaluate all particles in parallel
             with Pool(processes=self.num_processes) as pool:
                 scores = pool.map(self.objective_function, self.positions)
-            
+
             # update personal and global bests
             for i in range(self.num_particles):
                 # update personal best
                 if scores[i] < self.personal_best_scores[i]:
                     self.personal_best_scores[i] = scores[i]
                     self.personal_best_positions[i] = self.positions[i].copy()
-                
+
                 # update global best
                 if scores[i] < self.global_best_score:
                     self.global_best_score = scores[i]
                     self.global_best_position = self.positions[i].copy()
-                
+
             # update velocities and positions
             for i in range(self.num_particles):
                 # random coefficients
@@ -118,16 +118,16 @@ class PSO:
                 # velocity update
                 cognitive = self.c1 * r1 * (self.personal_best_positions[i] - self.positions[i])
                 social = self.c2 * r2 * (self.global_best_position - self.positions[i])
-                
+
                 self.velocities[i] = (
-                    self.w * self.velocities[i] + 
-                    cognitive + 
+                    self.w * self.velocities[i] +
+                    cognitive +
                     social
                 )
 
                 # position update
                 self.positions[i] += self.velocities[i]
-                
+
                 # enforce bounds
                 self.positions[i] = np.clip(self.positions[i], self.bounds[0], self.bounds[1])
 
@@ -139,19 +139,22 @@ class PSO:
 
             # early stopping check
             self.best_score_history.append(self.global_best_score)
+            should_stop = False
             if len(self.best_score_history) > self.patience:
                 recent_improvement = (self.best_score_history[-self.patience] - self.global_best_score) / self.best_score_history[-self.patience]
                 if recent_improvement < self.min_improvement:
                     if verbose >= 1:
                         print(f"\n[EARLY STOP] No significant improvement for {self.patience} iterations")
                         print(f"Recent improvement: {recent_improvement*100:.2f}% < {self.min_improvement*100:.2f}% threshold")
-                    break  # exit optimization loop
+                    should_stop = True
 
             # live visualization
             if verbose >= 1:
                 if config.SHOW_PLOTS_DURING_OPT:
                     from visualization import plot_pso_particles_live
-                    plot_pso_particles_live(self, iteration)
+                    # check if this is the final iteration (either last planned or early stop)
+                    is_final = (iteration == self.num_iterations - 1) or should_stop
+                    plot_pso_particles_live(self, iteration, is_final=is_final)
 
             # progress report
             iteration_time = time.time() - iteration_start
@@ -160,6 +163,10 @@ class PSO:
                       f"Best: {self.global_best_score:8.2f} | "
                       f"Avg: {avg_score:8.2f} | "
                       f"Time: {iteration_time:5.1f}s", flush=True)
+
+            # break if early stopping triggered
+            if should_stop:
+                break
             
         total_time = time.time() - start_time
 
@@ -385,6 +392,7 @@ class ACO:
 
             # early stopping
             self.best_score_history.append(self.global_best_score)
+            should_stop = False
             if len(self.best_score_history) > self.patience:
                 recent_improvement = (
                     self.best_score_history[-self.patience] - self.global_best_score
@@ -394,19 +402,25 @@ class ACO:
                     if verbose >= 1:
                         print(f"\n[EARLY STOP] No significant improvement for {self.patience} iterations")
                         print(f"Recent improvement: {recent_improvement*100:.2f}% < {self.min_improvement*100:.2f}% threshold")
-                    break
+                    should_stop = True
 
             # progress report
             iteration_time = time.time() - iteration_start
             if verbose >= 1:
                 if config.SHOW_PLOTS_DURING_OPT:
                     from visualization import plot_aco_archive_live
-                    plot_aco_archive_live(self, iteration)
+                    # check if this is the final iteration (either last planned or early stop)
+                    is_final = (iteration == self.num_iterations - 1) or should_stop
+                    plot_aco_archive_live(self, iteration, is_final=is_final)
 
                 print(f"Iteration {iteration + 1:3d}/{self.num_iterations} | "
                       f"Best: {self.global_best_score:8.2f} | "
                       f"Avg: {avg_score:8.2f} | "
                       f"Time: {iteration_time:5.1f}s", flush=True)
+
+            # break if early stopping triggered
+            if should_stop:
+                break
 
         total_time = time.time() - start_time
 

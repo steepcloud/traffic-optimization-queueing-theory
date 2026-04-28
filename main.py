@@ -244,6 +244,12 @@ def parse_args():
              '  aco - Ant Colony Optimization (ACOR)\n'
              '(default: pso)'
     )
+    parser.add_argument(
+        '--scenario',
+        type=str,
+        default=None,
+        help='Scenario name for log file naming (e.g., 1A_low_traffic)'
+    )
     return parser.parse_args()
 
 
@@ -251,12 +257,16 @@ def main():
     """Main execution workflow."""
     args = parse_args()
     method = args.method
+    scenario = args.scenario
 
     if not os.path.exists(config.OUTPUT_DIR):
         os.makedirs(config.OUTPUT_DIR)
-    
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_filename = f'run_{method}_{timestamp}.log'
+    if scenario:
+        log_filename = f'run_{scenario}_{method}_{timestamp}.log'
+    else:
+        log_filename = f'run_{method}_{timestamp}.log'
     log_path = os.path.join(config.OUTPUT_DIR, log_filename)
 
     # redirect stdout to TeeLogger (terminal + file simultaneously)
@@ -297,7 +307,13 @@ def main():
                 baseline_timings=baseline_timings,
                 optimized_timings=opt_timings,
                 num_intersections=config.NUM_INTERSECTIONS,
-                output_dir=config.OUTPUT_DIR
+                output_dir=config.OUTPUT_DIR,
+                network=network,
+                arrival_rate=config.ARRIVAL_RATE,
+                service_rate=config.SERVICE_RATE,
+                warmup_period=config.WARMUP_PERIOD,
+                simulation_duration=config.SIMULATION_DURATION,
+                max_queue_threshold=config.MAX_QUEUE_THRESHOLD
             )
 
             print("\nGenerating traffic animation...")

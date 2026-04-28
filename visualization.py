@@ -35,7 +35,6 @@ def plot_optimization_convergence(pso_history: Dict, aco_history: Dict = None,
 
     ax1.set_xlabel('Iteration', fontsize=12)
     ax1.set_ylabel('Objective Function Value', fontsize=12)
-    ax1.set_title('PSO Convergence', fontsize=14, fontweight='bold')
     ax1.legend()
     ax1.grid(True, alpha=0.3)
     
@@ -263,28 +262,28 @@ def plot_signal_timings(baseline_timings: np.ndarray, optimized_timings: np.ndar
 def plot_queue_evolution(queue_data: Dict[int, List], save_path: str = None):
     """
     Plot queue length evolution over time for each lane.
-    
+
     Args:
         queue_data: Dictionary {lane_id: [(time, queue_length), ...]}
     """
     fig, ax = plt.subplots(figsize=(14, 6))
-    
+
     colors = plt.cm.tab10(np.linspace(0, 1, len(queue_data)))
-    
+
     for idx, (lane_id, data) in enumerate(queue_data.items()):
         if len(data) > 0:
             times, queues = zip(*data)
-            ax.plot(times, queues, label=f'Lane {lane_id}', 
+            ax.plot(times, queues, label=f'Lane {lane_id}',
                    color=colors[idx], linewidth=1.5, alpha=0.7)
-    
+
     ax.set_xlabel('Time (seconds)', fontsize=12, fontweight='bold')
     ax.set_ylabel('Queue Length (vehicles)', fontsize=12, fontweight='bold')
     ax.set_title('Queue Length Evolution Over Time', fontsize=14, fontweight='bold')
     ax.legend(loc='upper right', ncol=2, fontsize=9)
     ax.grid(True, alpha=0.3)
-    
+
     plt.tight_layout()
-    
+
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"Saved queue evolution plot to {save_path}")
@@ -292,15 +291,624 @@ def plot_queue_evolution(queue_data: Dict[int, List], save_path: str = None):
     plt.close()
 
 
-def generate_all_plots(baseline_metrics: Dict, 
+def plot_queue_distribution_histogram(baseline_queue_data: Dict[int, List],
+                                      optimized_queue_data: Dict[int, List],
+                                      save_path: str = None):
+    """
+    Plot histogram comparing queue length distributions between baseline and optimized.
+
+    Args:
+        baseline_queue_data: Dictionary {lane_id: [(time, queue_length), ...]} for baseline
+        optimized_queue_data: Dictionary {lane_id: [(time, queue_length), ...]} for optimized
+    """
+    baseline_queues = []
+    optimized_queues = []
+
+    for lane_id, data in baseline_queue_data.items():
+        if len(data) > 0:
+            baseline_queues.extend([q for _, q in data])
+
+    for lane_id, data in optimized_queue_data.items():
+        if len(data) > 0:
+            optimized_queues.extend([q for _, q in data])
+
+    if len(baseline_queues) == 0 or len(optimized_queues) == 0:
+        print("[WARN] No queue data available for distribution histogram")
+        return
+
+    # bins for histogram (0-5, 5-10, 10-15, 15-20, 20+)
+    bins = [0, 5, 10, 15, 20, 100]  # last bin catches everything >20
+    bin_labels = ['0-5', '5-10', '10-15', '15-20', '20+']
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+
+    baseline_counts, _ = np.histogram(baseline_queues, bins=bins)
+    baseline_percentages = baseline_counts / len(baseline_queues) * 100
+
+    bars1 = ax1.bar(bin_labels, baseline_percentages, color='#e74c3c', alpha=0.8, edgecolor='black')
+    ax1.set_xlabel('Queue Length (vehicles)', fontsize=12, fontweight='bold')
+    ax1.set_ylabel('Frequency (%)', fontsize=12, fontweight='bold')
+    ax1.set_title('Baseline Queue Distribution', fontsize=14, fontweight='bold')
+    ax1.grid(True, axis='y', alpha=0.3)
+
+    for bar in bars1:
+        height = bar.get_height()
+        ax1.text(bar.get_x() + bar.get_width()/2., height,
+                f'{height:.1f}%', ha='center', va='bottom', fontsize=10, fontweight='bold')
+
+    optimized_counts, _ = np.histogram(optimized_queues, bins=bins)
+    optimized_percentages = optimized_counts / len(optimized_queues) * 100
+
+    bars2 = ax2.bar(bin_labels, optimized_percentages, color='#3498db', alpha=0.8, edgecolor='black')
+    ax2.set_xlabel('Queue Length (vehicles)', fontsize=12, fontweight='bold')
+    ax2.set_ylabel('Frequency (%)', fontsize=12, fontweight='bold')
+    ax2.set_title('Optimized Queue Distribution', fontsize=14, fontweight='bold')
+    ax2.grid(True, axis='y', alpha=0.3)
+
+    for bar in bars2:
+        height = bar.get_height()
+        ax2.text(bar.get_x() + bar.get_width()/2., height,
+                f'{height:.1f}%', ha='center', va='bottom', fontsize=10, fontweight='bold')
+
+    baseline_mean = np.mean(baseline_queues)
+    optimized_mean = np.mean(optimized_queues)
+    improvement = (baseline_mean - optimized_mean) / baseline_mean * 100
+
+    fig.suptitle(f'Queue Length Distribution Comparison | '
+                 f'Baseline Mean: {baseline_mean:.1f} vs Optimized Mean: {optimized_mean:.1f} '
+                 f'({improvement:.1f}% improvement)',
+                 fontsize=13, fontweight='bold', y=0.98)
+
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Saved queue distribution histogram to {save_path}")
+
+    plt.close()
+
+
+def plot_blockage_frequency(baseline_queue_data: Dict[int, List],
+                           optimized_queue_data: Dict[int, List],
+                           max_queue_threshold: float,
+                           save_path: str = None):
+    """
+    Plot blockage frequency analysis showing how often lanes exceed threshold.
+
+    Args:
+        baseline_queue_data: Dictionary {lane_id: [(time, queue_length), ...]} for baseline
+        optimized_queue_data: Dictionary {lane_id: [(time, queue_length), ...]} for optimized
+        max_queue_threshold: Queue length threshold for blockage
+    """
+    baseline_blockages = {}
+    optimized_blockages = {}
+
+    for lane_id, data in baseline_queue_data.items():
+        if len(data) > 0:
+            blocked_count = sum(1 for _, q in data if q >= max_queue_threshold)
+            baseline_blockages[lane_id] = (blocked_count / len(data)) * 100
+
+    for lane_id, data in optimized_queue_data.items():
+        if len(data) > 0:
+            blocked_count = sum(1 for _, q in data if q >= max_queue_threshold)
+            optimized_blockages[lane_id] = (blocked_count / len(data)) * 100
+
+    if len(baseline_blockages) == 0:
+        print("[WARN] No queue data available for blockage frequency analysis")
+        return
+
+    lane_ids = sorted(set(list(baseline_blockages.keys()) + list(optimized_blockages.keys())))
+
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 10))
+
+    x = np.arange(len(lane_ids))
+    width = 0.35
+
+    baseline_values = [baseline_blockages.get(lane_id, 0) for lane_id in lane_ids]
+    optimized_values = [optimized_blockages.get(lane_id, 0) for lane_id in lane_ids]
+
+    bars1 = ax1.bar(x - width/2, baseline_values, width, label='Baseline',
+                   color='#e74c3c', alpha=0.8, edgecolor='black')
+    bars2 = ax1.bar(x + width/2, optimized_values, width, label='Optimized',
+                   color='#3498db', alpha=0.8, edgecolor='black')
+
+    ax1.set_xlabel('Lane ID', fontsize=12, fontweight='bold')
+    ax1.set_ylabel('Blockage Frequency (%)', fontsize=12, fontweight='bold')
+    ax1.set_title(f'Blockage Frequency by Lane (Threshold: {max_queue_threshold} vehicles)',
+                 fontsize=14, fontweight='bold')
+    ax1.set_xticks(x)
+    ax1.set_xticklabels([f'Lane {lane_id}' for lane_id in lane_ids], rotation=45, ha='right')
+    ax1.legend(fontsize=11)
+    ax1.grid(True, axis='y', alpha=0.3)
+
+    for bars in [bars1, bars2]:
+        for bar in bars:
+            height = bar.get_height()
+            if height > 0:
+                ax1.text(bar.get_x() + bar.get_width()/2., height,
+                        f'{height:.1f}%', ha='center', va='bottom', fontsize=8)
+
+    # heatmap showing blockage reduction
+    # matrix: rows = lanes, cols = [baseline, optimized]
+    blockage_matrix = np.array([
+        [baseline_blockages.get(lane_id, 0) for lane_id in lane_ids],
+        [optimized_blockages.get(lane_id, 0) for lane_id in lane_ids]
+    ]).T  # transpose so lanes are rows
+
+    im = ax2.imshow(blockage_matrix, cmap='RdYlGn_r', aspect='auto', vmin=0, vmax=100)
+
+    ax2.set_xticks([0, 1])
+    ax2.set_xticklabels(['Baseline', 'Optimized'])
+    ax2.set_yticks(np.arange(len(lane_ids)))
+    ax2.set_yticklabels([f'Lane {lane_id}' for lane_id in lane_ids])
+
+    for i in range(len(lane_ids)):
+        for j in range(2):
+            value = blockage_matrix[i, j]
+            text_color = 'white' if value > 50 else 'black'
+            ax2.text(j, i, f'{value:.1f}%', ha='center', va='center',
+                    color=text_color, fontsize=9, fontweight='bold')
+
+    ax2.set_title('Blockage Frequency Heatmap', fontsize=14, fontweight='bold')
+    ax2.set_xlabel('Scenario', fontsize=12, fontweight='bold')
+    ax2.set_ylabel('Lane ID', fontsize=12, fontweight='bold')
+
+    cbar = plt.colorbar(im, ax=ax2)
+    cbar.set_label('Blockage Frequency (%)', fontsize=10)
+
+    avg_baseline_blockage = np.mean(baseline_values)
+    avg_optimized_blockage = np.mean(optimized_values)
+    total_reduction = (avg_baseline_blockage - avg_optimized_blockage) / avg_baseline_blockage * 100 if avg_baseline_blockage > 0 else 0
+
+    fig.suptitle(f'Blockage Analysis | Avg Baseline: {avg_baseline_blockage:.1f}% vs '
+                 f'Avg Optimized: {avg_optimized_blockage:.1f}% ({total_reduction:.1f}% reduction)',
+                 fontsize=13, fontweight='bold', y=0.98)
+
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Saved blockage frequency analysis to {save_path}")
+
+    plt.close()
+
+
+def plot_intersection_utilization_heatmap(network, arrival_rate: float, service_rate: float,
+                                        save_path: str = None):
+    """
+    Plot intersection utilization heatmap showing utilization ratios (ρ = λ/μ).
+
+    Args:
+        network: Network object containing intersection information
+        arrival_rate: Base arrival rate (λ)
+        service_rate: Service rate (μ)
+    """
+    import config
+
+    num_intersections = config.NUM_INTERSECTIONS
+    utilizations = []
+
+    for int_id in range(num_intersections):
+        intersection = network.intersections[int_id]
+
+        total_arrival = 0
+        for direction, lane in intersection.lanes.items():
+            if config.USE_ASYMMETRIC_TRAFFIC and int_id in config.LANE_ARRIVAL_RATES:
+                lane_rate = config.LANE_ARRIVAL_RATES[int_id].get(direction, arrival_rate)
+            else:
+                lane_rate = arrival_rate
+            total_arrival += lane_rate
+
+        # utilization ρ = λ / μ
+        utilization = total_arrival / service_rate
+        utilizations.append(utilization)
+
+    grid_size = int(np.ceil(np.sqrt(num_intersections)))
+    utilization_grid = np.zeros((grid_size, grid_size))
+
+    for i, util in enumerate(utilizations):
+        row = i // grid_size
+        col = i % grid_size
+        utilization_grid[row, col] = util
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    im = ax.imshow(utilization_grid, cmap='RdYlGn_r', vmin=0, vmax=1.2,
+                   aspect='equal', interpolation='nearest')
+
+    for i in range(grid_size):
+        for j in range(grid_size):
+            intersection_idx = i * grid_size + j
+            if intersection_idx < num_intersections:
+                util = utilization_grid[i, j]
+                text_color = 'white' if util > 0.6 else 'black'
+                ax.text(j, i, f'Int {intersection_idx}\nρ={util:.2f}',
+                       ha='center', va='center', color=text_color,
+                       fontsize=11, fontweight='bold')
+
+    ax.set_xticks(np.arange(grid_size))
+    ax.set_yticks(np.arange(grid_size))
+    ax.set_xticklabels([f'Col {i}' for i in range(grid_size)])
+    ax.set_yticklabels([f'Row {i}' for i in range(grid_size)])
+
+    ax.set_title(f'Intersection Utilization Heatmap (ρ = λ/μ)\n'
+                 f'Arrival Rate: {arrival_rate:.3f} veh/s | Service Rate: {service_rate:.3f} veh/s',
+                 fontsize=14, fontweight='bold')
+    ax.set_xlabel('Network Column', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Network Row', fontsize=12, fontweight='bold')
+
+    cbar = plt.colorbar(im, ax=ax)
+    cbar.set_label('Utilization Ratio (ρ)', fontsize=11, fontweight='bold')
+
+    cbar.ax.axhline(y=1.0, color='black', linewidth=2, linestyle='--')
+    cbar.ax.text(1.5, 1.0, 'Unstable', va='center', fontsize=9, fontweight='bold',
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.7))
+
+    cbar.ax.axhline(y=0.8, color='black', linewidth=1, linestyle='--')
+    cbar.ax.text(1.5, 0.8, 'Near Sat', va='center', fontsize=9,
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='orange', alpha=0.7))
+
+    cbar.ax.axhline(y=0.6, color='black', linewidth=1, linestyle='--')
+    cbar.ax.text(1.5, 0.6, 'Heavy', va='center', fontsize=9,
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='lightblue', alpha=0.7))
+
+    avg_utilization = np.mean(utilizations)
+    max_utilization = np.max(utilizations)
+    overloaded_count = sum(1 for u in utilizations if u > 1.0)
+
+    stats_text = (f'Average ρ: {avg_utilization:.2f}\n'
+                 f'Maximum ρ: {max_utilization:.2f}\n'
+                 f'Overloaded Intersections: {overloaded_count}/{num_intersections}')
+
+    ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
+           fontsize=10, verticalalignment='top',
+           bbox=dict(boxstyle='round', facecolor='white', alpha=0.9, edgecolor='black'))
+
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Saved intersection utilization heatmap to {save_path}")
+
+    plt.close()
+
+
+def plot_time_of_day_performance(baseline_queue_data: Dict[int, List],
+                                 optimized_queue_data: Dict[int, List],
+                                 warmup_period: float,
+                                 simulation_duration: float,
+                                 save_path: str = None):
+    """
+    Plot time-of-day performance showing queue length evolution with warmup period marked.
+
+    Args:
+        baseline_queue_data: Dictionary {lane_id: [(time, queue_length), ...]} for baseline
+        optimized_queue_data: Dictionary {lane_id: [(time, queue_length), ...]} for optimized
+        warmup_period: Warmup period duration in seconds
+        simulation_duration: Total simulation duration in seconds
+    """
+    def aggregate_queue_data(queue_data):
+        time_points = []
+        queue_lengths = []
+
+        for lane_id, data in queue_data.items():
+            if len(data) > 0:
+                for time, queue in data:
+                    time_points.append(time)
+                    queue_lengths.append(queue)
+
+        if len(time_points) == 0:
+            return [], []
+
+        sorted_indices = np.argsort(time_points)
+        time_points = np.array(time_points)[sorted_indices]
+        queue_lengths = np.array(queue_lengths)[sorted_indices]
+
+        bucket_size = 30  # seconds
+        max_time = int(np.max(time_points))
+        time_buckets = np.arange(0, max_time + bucket_size, bucket_size)
+
+        avg_queues = []
+        for i in range(len(time_buckets) - 1):
+            mask = (time_points >= time_buckets[i]) & (time_points < time_buckets[i + 1])
+            if np.any(mask):
+                avg_queues.append(np.mean(queue_lengths[mask]))
+            else:
+                avg_queues.append(0)
+
+        return time_buckets[:-1], avg_queues
+
+    baseline_times, baseline_queues = aggregate_queue_data(baseline_queue_data)
+    optimized_times, optimized_queues = aggregate_queue_data(optimized_queue_data)
+
+    if len(baseline_times) == 0 or len(optimized_times) == 0:
+        print("[WARN] No queue data available for time-of-day performance plot")
+        return
+
+    fig, ax = plt.subplots(figsize=(14, 6))
+
+    ax.plot(baseline_times, baseline_queues, 'r-', linewidth=2, label='Baseline',
+           alpha=0.8, marker='o', markersize=3)
+    ax.plot(optimized_times, optimized_queues, 'b-', linewidth=2, label='Optimized',
+           alpha=0.8, marker='s', markersize=3)
+
+    ax.axvspan(0, warmup_period, alpha=0.2, color='yellow', label='Warmup Period')
+    ax.axvline(warmup_period, color='orange', linestyle='--', linewidth=2)
+
+    ax.text(warmup_period + (simulation_duration - warmup_period) / 2,
+           ax.get_ylim()[1] * 0.9, 'Measurement Period',
+           ha='center', va='top', fontsize=11, fontweight='bold',
+           bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.7))
+
+    # calculate statistics for measurement period only
+    def get_measurement_stats(times, queues):
+        mask = times >= warmup_period
+        if np.any(mask):
+            measurement_queues = np.array(queues)[mask]
+            return np.mean(measurement_queues), np.max(measurement_queues)
+        return 0, 0
+
+    baseline_avg, baseline_max = get_measurement_stats(baseline_times, baseline_queues)
+    optimized_avg, optimized_max = get_measurement_stats(optimized_times, optimized_queues)
+
+    stats_text = (f'Measurement Period Statistics:\n'
+                 f'Baseline - Avg: {baseline_avg:.1f}, Max: {baseline_max:.1f}\n'
+                 f'Optimized - Avg: {optimized_avg:.1f}, Max: {optimized_max:.1f}\n'
+                 f'Improvement - Avg: {(baseline_avg - optimized_avg)/baseline_avg*100:.1f}%, '
+                 f'Max: {(baseline_max - optimized_max)/baseline_max*100:.1f}%')
+
+    ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
+           fontsize=9, verticalalignment='top',
+           bbox=dict(boxstyle='round', facecolor='white', alpha=0.9, edgecolor='black'))
+
+    ax.set_xlabel('Time (seconds)', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Average Queue Length (vehicles)', fontsize=12, fontweight='bold')
+    ax.set_title(f'Time-of-Day Performance Analysis\n'
+                 f'Warmup: {warmup_period}s | Total: {simulation_duration}s',
+                 fontsize=14, fontweight='bold')
+    ax.legend(loc='upper right', fontsize=10)
+    ax.grid(True, alpha=0.3)
+
+    ax.set_xlim(0, simulation_duration)
+
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Saved time-of-day performance plot to {save_path}")
+
+    plt.close()
+
+
+def plot_scenario_comparison_summary(scenario_results: Dict[str, Dict],
+                                   save_path: str = None):
+    """
+    Plot scenario comparison summary using parallel coordinates.
+
+    Args:
+        scenario_results: Dictionary {scenario_name: {metric_name: value, ...}}
+                        Each scenario dict should have:
+                        - avg_waiting_time: float
+                        - max_queue_length: float
+                        - blockage_frequency: float
+                        - improvement_percentage: float
+                        - computation_time: float (optional)
+    """
+    if len(scenario_results) == 0:
+        print("[WARN] No scenario results available for comparison summary")
+        return
+
+    metrics = ['avg_waiting_time', 'max_queue_length', 'blockage_frequency',
+              'improvement_percentage', 'computation_time']
+    metric_labels = ['Avg Wait Time (s)', 'Max Queue Length', 'Blockage Freq (%)',
+                   'Improvement (%)', 'Comp Time (s)']
+
+    valid_scenarios = {}
+    for scenario_name, results in scenario_results.items():
+        if all(metric in results for metric in metrics):
+            valid_scenarios[scenario_name] = results
+
+    if len(valid_scenarios) == 0:
+        print("[WARN] No valid scenarios with complete metrics for comparison")
+        return
+
+    scenario_names = list(valid_scenarios.keys())
+    num_scenarios = len(scenario_names)
+    num_metrics = len(metrics)
+
+    data_matrix = np.zeros((num_scenarios, num_metrics))
+    for i, scenario_name in enumerate(scenario_names):
+        for j, metric in enumerate(metrics):
+            data_matrix[i, j] = valid_scenarios[scenario_name][metric]
+
+    # normalize each metric to [0, 1] range for better visualization
+    normalized_data = data_matrix.copy()
+    for j in range(num_metrics):
+        min_val = np.min(data_matrix[:, j])
+        max_val = np.max(data_matrix[:, j])
+        if max_val > min_val:
+            normalized_data[:, j] = (data_matrix[:, j] - min_val) / (max_val - min_val)
+
+    fig, ax = plt.subplots(figsize=(16, 10))
+
+    colors = plt.cm.tab10(np.linspace(0, 1, num_scenarios))
+
+    for i in range(num_scenarios):
+        ax.plot(range(num_metrics), normalized_data[i, :],
+               color=colors[i], linewidth=2, marker='o', markersize=8,
+               label=scenario_names[i], alpha=0.8)
+
+    ax.set_xticks(range(num_metrics))
+    ax.set_xticklabels(metric_labels, fontsize=11, fontweight='bold', rotation=15, ha='right')
+    ax.set_ylabel('Normalized Value', fontsize=12, fontweight='bold')
+    ax.set_title('Scenario Comparison Summary (Parallel Coordinates)',
+                fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3, linestyle='--')
+    ax.set_ylim(0, 1.1)
+
+    ax.legend(loc='upper left', fontsize=9, ncol=2, framealpha=0.9)
+
+    for i in range(num_scenarios):
+        for j in range(num_metrics):
+            original_value = data_matrix[i, j]
+            normalized_value = normalized_data[i, j]
+            # only show values for some points to avoid clutter
+            if i % 2 == 0 or j == 2:  # show for alternating scenarios and middle metric
+                ax.text(j, normalized_value + 0.02, f'{original_value:.1f}',
+                       ha='center', va='bottom', fontsize=7, color=colors[i], fontweight='bold')
+
+    avg_improvement = np.mean(data_matrix[:, 3])  # improvement_percentage is at index 3
+    avg_wait_time = np.mean(data_matrix[:, 0])  # avg_waiting_time is at index 0
+    avg_blockage = np.mean(data_matrix[:, 2])  # blockage_frequency is at index 2
+
+    stats_text = (f'Overall Statistics:\n'
+                 f'Avg Improvement: {avg_improvement:.1f}%\n'
+                 f'Avg Wait Time: {avg_wait_time:.1f}s\n'
+                 f'Avg Blockage Freq: {avg_blockage:.1f}%\n'
+                 f'Total Scenarios: {num_scenarios}')
+
+    ax.text(0.98, 0.02, stats_text, transform=ax.transAxes,
+           fontsize=10, verticalalignment='bottom', horizontalalignment='right',
+           bbox=dict(boxstyle='round', facecolor='white', alpha=0.9, edgecolor='black'))
+
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Saved scenario comparison summary to {save_path}")
+
+    plt.close()
+
+
+def plot_algorithm_efficiency_scatter(pso_results: Dict[str, Dict],
+                                    aco_results: Dict[str, Dict],
+                                    save_path: str = None):
+    """
+    Plot algorithm efficiency scatter plot showing computation time vs improvement percentage.
+
+    Args:
+        pso_results: Dictionary {scenario_name: {'computation_time': float, 'improvement_percentage': float, ...}}
+        aco_results: Dictionary {scenario_name: {'computation_time': float, 'improvement_percentage': float, ...}}
+    """
+    pso_scenarios = []
+    pso_times = []
+    pso_improvements = []
+
+    aco_scenarios = []
+    aco_times = []
+    aco_improvements = []
+
+    for scenario_name, results in pso_results.items():
+        if 'computation_time' in results and 'improvement_percentage' in results:
+            pso_scenarios.append(scenario_name)
+            pso_times.append(results['computation_time'])
+            pso_improvements.append(results['improvement_percentage'])
+
+    for scenario_name, results in aco_results.items():
+        if 'computation_time' in results and 'improvement_percentage' in results:
+            aco_scenarios.append(scenario_name)
+            aco_times.append(results['computation_time'])
+            aco_improvements.append(results['improvement_percentage'])
+
+    if len(pso_scenarios) == 0 and len(aco_scenarios) == 0:
+        print("[WARN] No algorithm efficiency data available")
+        return
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+
+    if len(pso_scenarios) > 0:
+        ax.scatter(pso_times, pso_improvements, c='#3498db', s=150, alpha=0.7,
+                  edgecolors='black', linewidth=2, label='PSO', marker='o', zorder=5)
+
+        for i, scenario in enumerate(pso_scenarios):
+            ax.annotate(scenario, (pso_times[i], pso_improvements[i]),
+                       textcoords="offset points", xytext=(5, 5), fontsize=8,
+                       color='blue', fontweight='bold', alpha=0.8)
+
+    if len(aco_scenarios) > 0:
+        ax.scatter(aco_times, aco_improvements, c='#2ecc71', s=150, alpha=0.7,
+                  edgecolors='black', linewidth=2, label='ACO', marker='s', zorder=5)
+
+        for i, scenario in enumerate(aco_scenarios):
+            ax.annotate(scenario, (aco_times[i], aco_improvements[i]),
+                       textcoords="offset points", xytext=(5, -15), fontsize=8,
+                       color='green', fontweight='bold', alpha=0.8)
+
+    ax.axhline(y=0, color='black', linestyle='-', linewidth=1, alpha=0.5)
+
+    all_times = pso_times + aco_times
+    all_improvements = pso_improvements + aco_improvements
+
+    if len(all_times) > 0 and len(all_improvements) > 0:
+        median_time = np.median(all_times)
+        median_improvement = np.median(all_improvements)
+
+        ax.axvline(x=median_time, color='gray', linestyle='--', linewidth=1, alpha=0.5)
+        ax.axhline(y=median_improvement, color='gray', linestyle='--', linewidth=1, alpha=0.5)
+
+        ax.text(median_time * 0.5, median_improvement * 1.5, 'Fast & Effective',
+               ha='center', va='center', fontsize=10, fontweight='bold',
+               bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.5))
+
+        ax.text(median_time * 1.5, median_improvement * 1.5, 'Slow but Effective',
+               ha='center', va='center', fontsize=10, fontweight='bold',
+               bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.5))
+
+        ax.text(median_time * 0.5, median_improvement * 0.5, 'Fast but Ineffective',
+               ha='center', va='center', fontsize=10, fontweight='bold',
+               bbox=dict(boxstyle='round', facecolor='orange', alpha=0.5))
+
+        ax.text(median_time * 1.5, median_improvement * 0.5, 'Slow & Ineffective',
+               ha='center', va='center', fontsize=10, fontweight='bold',
+               bbox=dict(boxstyle='round', facecolor='red', alpha=0.5))
+
+    ax.set_xlabel('Computation Time (seconds)', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Improvement Percentage (%)', fontsize=12, fontweight='bold')
+    ax.set_title('Algorithm Efficiency: Computation Time vs Improvement',
+                fontsize=14, fontweight='bold')
+    ax.legend(fontsize=11, loc='upper left')
+    ax.grid(True, alpha=0.3, linestyle='--')
+
+    stats_text = ""
+    if len(pso_times) > 0:
+        avg_pso_time = np.mean(pso_times)
+        avg_pso_improvement = np.mean(pso_improvements)
+        stats_text += f'PSO - Avg Time: {avg_pso_time:.1f}s, Avg Improvement: {avg_pso_improvement:.1f}%\n'
+
+    if len(aco_times) > 0:
+        avg_aco_time = np.mean(aco_times)
+        avg_aco_improvement = np.mean(aco_improvements)
+        stats_text += f'ACO - Avg Time: {avg_aco_time:.1f}s, Avg Improvement: {avg_aco_improvement:.1f}%'
+
+    if stats_text:
+        ax.text(0.98, 0.02, stats_text, transform=ax.transAxes,
+               fontsize=9, verticalalignment='bottom', horizontalalignment='right',
+               bbox=dict(boxstyle='round', facecolor='white', alpha=0.9, edgecolor='black'))
+
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Saved algorithm efficiency scatter plot to {save_path}")
+
+    plt.close()
+
+
+def generate_all_plots(baseline_metrics: Dict,
                        num_intersections: int,
                        output_dir: str,
-                       pso_metrics: Dict = None, 
+                       pso_metrics: Dict = None,
                        aco_metrics: Dict = None,
                        pso_history: Dict = None,
                        aco_history: Dict = None,
-                       baseline_timings: np.ndarray = None, 
-                       optimized_timings: np.ndarray = None):
+                       baseline_timings: np.ndarray = None,
+                       optimized_timings: np.ndarray = None,
+                       network = None,
+                       arrival_rate: float = None,
+                       service_rate: float = None,
+                       warmup_period: float = None,
+                       simulation_duration: float = None,
+                       max_queue_threshold: float = None):
     """
     Generate and save all visualization plots.
     Works with PSO only, ACO only, or both.
@@ -310,9 +918,9 @@ def generate_all_plots(baseline_metrics: Dict,
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
         print(f"Created output directory: {output_dir}")
-    
+
     print(f"\n{'~' * 5} GENERATING VISUALIZATIONS {'~' * 5}")
-    
+
     # 1. optimization convergence
     print("Generating convergence plot...")
     plot_optimization_convergence(
@@ -320,7 +928,7 @@ def generate_all_plots(baseline_metrics: Dict,
         aco_history=aco_history,
         save_path=os.path.join(output_dir, 'convergence.png')
     )
-    
+
     # 2. comparison bars
     print("Generating comparison plot...")
     plot_comparison_bars(
@@ -329,7 +937,7 @@ def generate_all_plots(baseline_metrics: Dict,
         aco_metrics=aco_metrics,
         save_path=os.path.join(output_dir, 'comparison.png')
     )
-    
+
     # 3. improvement percentages
     print("Generating improvement plot...")
     plot_improvement_percentages(
@@ -338,7 +946,7 @@ def generate_all_plots(baseline_metrics: Dict,
         aco_metrics=aco_metrics,
         save_path=os.path.join(output_dir, 'improvement.png')
     )
-    
+
     # 4. signal timings
     if baseline_timings is not None and optimized_timings is not None:
         print("Generating signal timing plot...")
@@ -348,7 +956,7 @@ def generate_all_plots(baseline_metrics: Dict,
             num_intersections=num_intersections,
             save_path=os.path.join(output_dir, 'signal_timings.png')
         )
-    
+
     # 5. queue evolution (if data available)
     active_metrics = pso_metrics if pso_metrics is not None else aco_metrics
     if active_metrics is not None and 'queue_samples' in active_metrics:
@@ -357,242 +965,182 @@ def generate_all_plots(baseline_metrics: Dict,
             queue_data=active_metrics['queue_samples'],
             save_path=os.path.join(output_dir, 'queue_evolution.png')
         )
-    
+
+    # 6. queue distribution histogram (if both baseline and optimized data available)
+    if (baseline_metrics is not None and 'queue_samples' in baseline_metrics and
+        active_metrics is not None and 'queue_samples' in active_metrics):
+        print("Generating queue distribution histogram...")
+        plot_queue_distribution_histogram(
+            baseline_queue_data=baseline_metrics['queue_samples'],
+            optimized_queue_data=active_metrics['queue_samples'],
+            save_path=os.path.join(output_dir, 'queue_distribution.png')
+        )
+
+    # 7. blockage frequency analysis (if threshold and queue data available)
+    if (max_queue_threshold is not None and
+        baseline_metrics is not None and 'queue_samples' in baseline_metrics and
+        active_metrics is not None and 'queue_samples' in active_metrics):
+        print("Generating blockage frequency analysis...")
+        plot_blockage_frequency(
+            baseline_queue_data=baseline_metrics['queue_samples'],
+            optimized_queue_data=active_metrics['queue_samples'],
+            max_queue_threshold=max_queue_threshold,
+            save_path=os.path.join(output_dir, 'blockage_frequency.png')
+        )
+
+    # 8. intersection utilization heatmap (if network and rates available)
+    if network is not None and arrival_rate is not None and service_rate is not None:
+        print("Generating intersection utilization heatmap...")
+        plot_intersection_utilization_heatmap(
+            network=network,
+            arrival_rate=arrival_rate,
+            service_rate=service_rate,
+            save_path=os.path.join(output_dir, 'utilization_heatmap.png')
+        )
+
+    # 9. time-of-day performance (if warmup and duration available)
+    if (warmup_period is not None and simulation_duration is not None and
+        baseline_metrics is not None and 'queue_samples' in baseline_metrics and
+        active_metrics is not None and 'queue_samples' in active_metrics):
+        print("Generating time-of-day performance plot...")
+        plot_time_of_day_performance(
+            baseline_queue_data=baseline_metrics['queue_samples'],
+            optimized_queue_data=active_metrics['queue_samples'],
+            warmup_period=warmup_period,
+            simulation_duration=simulation_duration,
+            save_path=os.path.join(output_dir, 'time_of_day_performance.png')
+        )
+
     print(f"All plots saved to '{output_dir}/'")
     print("~" * 60 + "\n")
 
 
-def plot_pso_particles_live(pso, iteration: int):
+def plot_optimizer_live(optimizer, iteration: int, method: str, is_final: bool = False):
     """
-    Real-time visualization of PSO particles (fast, non-blocking version).
-    Shows first 2 decision variables (Intersection 0: NS green, EW green).
+    Unified real-time visualization for both PSO and ACO optimizers.
+    Accepts method='pso' or method='aco'.
+
+    Left plot:  solution scatter — always plots VALID (bounded) solutions:
+                PSO -> personal best positions (always within bounds)
+                ACO -> archive solutions       (always within bounds)
+                Raw PSO particle positions are intentionally NOT plotted
+                because inertia/velocity can push them outside bounds,
+                causing the axes to collapse to a corner.
+
+    Right plot: convergence curve — identical for both methods.
+
+    Args:
+        is_final: If True, this is the final iteration (including early stop)
     """
-    # create figure on first call only
-    if not hasattr(plot_pso_particles_live, 'fig'):
-        plt.ion()  # interactive mode
-        plot_pso_particles_live.fig, plot_pso_particles_live.axes = plt.subplots(1, 2, figsize=(15, 6))
-        plt.show(block=False)
-    
-    fig = plot_pso_particles_live.fig
-    ax1, ax2 = plot_pso_particles_live.axes
-    
-    ax1.clear()
-    ax2.clear()
-    
-    # --- LEFT PLOT: Particle positions (simple scatter, no contour) ---
-    
-    # extract first 2 dimensions (Intersection 0: NS green, EW green)
-    positions_2d = pso.positions[:, :2]
-    pbest_2d = pso.personal_best_positions[:, :2]
-    gbest_2d = pso.global_best_position[:2] if pso.global_best_position is not None else None
-    
-    # color particles by their fitness (darker = better)
-    particle_scores = [pso.personal_best_scores[i] for i in range(pso.num_particles)]
-    
-    # plot particles with color mapping
-    scatter = ax1.scatter(positions_2d[:, 0], positions_2d[:, 1], 
-                         c=particle_scores, cmap='RdYlGn_r', s=150, alpha=0.8, 
-                         edgecolors='black', linewidth=1.5, vmin=min(particle_scores), vmax=max(particle_scores),
-                         label=f'Particles (n={pso.num_particles})', zorder=5)
-    
-    # add colorbar
-    if iteration == 0:
-        plot_pso_particles_live.cbar = plt.colorbar(scatter, ax=ax1)
-        plot_pso_particles_live.cbar.set_label('Fitness Score', fontsize=10)
-    else:
-        plot_pso_particles_live.cbar.update_normal(scatter)
-    
-    # plot personal bests (smaller, transparent)
-    ax1.scatter(pbest_2d[:, 0], pbest_2d[:, 1], 
-               c='green', s=60, alpha=0.4, marker='x',
-               label='Personal Bests', zorder=4)
-    
-    # plot global best (big red star)
-    if gbest_2d is not None:
-        ax1.scatter(gbest_2d[0], gbest_2d[1], 
-                   c='red', s=400, alpha=1.0, marker='*', edgecolors='black', linewidth=2,
-                   label=f'Global Best ({pso.global_best_score:.2f})', zorder=10)
-    
-    # draw velocity vectors (arrows)
-    velocities_2d = pso.velocities[:, :2]
-    for i in range(len(positions_2d)):
-        # only draw if velocity is non-negligible
-        vel_mag = np.linalg.norm(velocities_2d[i])
-        if vel_mag > 0.1:  # skip tiny velocities
-            ax1.arrow(positions_2d[i, 0], positions_2d[i, 1],
-                    velocities_2d[i, 0] * 0.3, velocities_2d[i, 1] * 0.3,  # reduced scaling
-                    head_width=0.4, head_length=0.3,  # smaller arrow head
-                    fc='cyan', ec='darkblue', 
-                    alpha=0.6, linewidth=0.8, zorder=3)
-    
-    ax1.set_xlabel('Intersection 0: NS Green Time (s)', fontsize=11, fontweight='bold')
-    ax1.set_ylabel('Intersection 0: EW Green Time (s)', fontsize=11, fontweight='bold')
-    ax1.set_title(f'PSO Swarm - Iteration {iteration + 1}/{pso.num_iterations}', 
-                 fontsize=13, fontweight='bold')
-    ax1.legend(loc='upper left', fontsize=9, framealpha=0.9)
-    ax1.grid(True, alpha=0.3, linestyle='--')
-    
-    x_min = min(positions_2d[:, 0].min(), pbest_2d[:, 0].min())
-    x_max = max(positions_2d[:, 0].max(), pbest_2d[:, 0].max())
-    y_min = min(positions_2d[:, 1].min(), pbest_2d[:, 1].min())
-    y_max = max(positions_2d[:, 1].max(), pbest_2d[:, 1].max())
-
-    padding = 5
-    ax1.set_xlim(x_min - padding, x_max + padding)
-    ax1.set_ylim(y_min - padding, y_max + padding)
-    
-    # add search bounds rectangle
-    rect = plt.Rectangle((pso.bounds[0], pso.bounds[0]), 
-                         pso.bounds[1] - pso.bounds[0], 
-                         pso.bounds[1] - pso.bounds[0],
-                         fill=False, edgecolor='gray', linewidth=2, linestyle='--', zorder=1)
-    ax1.add_patch(rect)
-    
-    # --- RIGHT PLOT: Convergence curve ---
-    
-    iterations = pso.history['iterations']
-    best_scores = pso.history['best_scores']
-    avg_scores = pso.history['avg_scores']
-    
-    ax2.plot(iterations, best_scores, 'b-', linewidth=2.5, label='Best Score', 
-            marker='o', markersize=5, markerfacecolor='blue', markeredgecolor='white')
-    ax2.plot(iterations, avg_scores, 'orange', linewidth=2, linestyle='--', alpha=0.8, 
-            label='Average Score', marker='s', markersize=4)
-    
-    ax2.fill_between(iterations, best_scores, avg_scores, alpha=0.2, color='blue')
-    
-    ax2.set_xlabel('Iteration', fontsize=11, fontweight='bold')
-    ax2.set_ylabel('Objective Function Value', fontsize=11, fontweight='bold')
-    ax2.set_title('Convergence Progress', fontsize=13, fontweight='bold')
-    ax2.legend(loc='upper right', fontsize=10)
-    ax2.grid(True, alpha=0.3, linestyle='--')
-    
-    # annotate current best
-    if len(best_scores) > 0:
-        improvement = ((best_scores[0] - best_scores[-1]) / best_scores[0] * 100) if best_scores[0] > 0 else 0
-        ax2.text(0.02, 0.98, 
-                f'Current Best: {pso.global_best_score:.2f}\nImprovement: {improvement:.1f}%',
-                transform=ax2.transAxes, fontsize=10, fontweight='bold',
-                verticalalignment='top',
-                bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.7))
-    
-    plt.tight_layout()
-    fig.canvas.draw()
-    fig.canvas.flush_events()
-
-    # save frame every iteration (for convergence animation)
     import config
-    save_convergence_frame(fig, 'pso', iteration, config.OUTPUT_DIR)
 
-    if iteration == pso.num_iterations - 1:  # last iteration
-        if not os.path.exists(config.OUTPUT_DIR):
-            os.makedirs(config.OUTPUT_DIR)
-        
-        save_path = os.path.join(config.OUTPUT_DIR, 'pso_particles_final.png')
-        fig.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"\n[SAVED] Final PSO particle plot saved to {save_path}")
+    _fn = plot_optimizer_live  # use function itself as state container
 
-        # stitch all frames into MP4
-        stitch_convergence_animation('pso', config.OUTPUT_DIR)
-
-
-def plot_aco_archive_live(aco, iteration: int):
-    """
-    Real-time visualization of ACO archive (mirrors plot_pso_particles_live style).
-    Shows first 2 decision variables (Intersection 0: NS green, EW green).
-    """
-    # create figure on first call only
-    if not hasattr(plot_aco_archive_live, 'fig'):
+    # --- create figure on first call only ---
+    if not hasattr(_fn, 'fig'):
         plt.ion()
-        plot_aco_archive_live.fig, plot_aco_archive_live.axes = plt.subplots(1, 2, figsize=(15, 6))
+        _fn.fig, _fn.axes = plt.subplots(1, 2, figsize=(15, 6))
+        _fn.cbar = None
         plt.show(block=False)
 
-    fig = plot_aco_archive_live.fig
-    ax1, ax2 = plot_aco_archive_live.axes
-
+    fig = _fn.fig
+    ax1, ax2 = _fn.axes
     ax1.clear()
     ax2.clear()
 
-    # --- LEFT PLOT: Archive solutions scatter ---
+    # Extract bounded solutions and scores depending on method
+    if method == 'pso':
+        # personal best positions are always clamped to bounds
+        solutions_2d = optimizer.personal_best_positions[:, :2]
+        scores       = list(optimizer.personal_best_scores)
+        best_score   = optimizer.global_best_score
+        best_sol_2d  = optimizer.global_best_position[:2]
+        n_label      = f'Personal Bests (n={optimizer.num_particles})'
+        best_label   = f'Global Best ({best_score:.2f})'
+        title        = f'PSO Swarm - Iteration {iteration + 1}/{optimizer.num_iterations}'
+        bounds       = optimizer.bounds
+        weights      = None   # PSO has no weights
+        ranks        = False
 
-    # extract archive data
-    archive_scores = [score for score, _ in aco.archive]
-    archive_solutions = np.array([sol for _, sol in aco.archive])
-
-    # extract first 2 dimensions (Intersection 0: NS green, EW green)
-    if len(archive_solutions) > 0:
+    else:  # aco
+        archive_solutions = np.array([sol for _, sol in optimizer.archive])
         solutions_2d = archive_solutions[:, :2]
+        scores       = [s for s, _ in optimizer.archive]
+        best_score   = optimizer.global_best_score
+        best_sol_2d  = solutions_2d[0]
+        n_label      = f'Archive (k={optimizer.archive_size})'
+        best_label   = f'Best (score={best_score:.2f})'
+        title        = f'ACO Archive - Iteration {iteration + 1}/{optimizer.num_iterations}'
+        bounds       = optimizer.bounds
+        weights      = optimizer._compute_weights()
+        ranks        = True
 
-        # color by fitness (darker = better, rank 0 = best)
-        scatter = ax1.scatter(
-            solutions_2d[:, 0], solutions_2d[:, 1],
-            c=archive_scores, cmap='RdYlGn_r', s=200, alpha=0.85,
-            edgecolors='black', linewidth=1.5,
-            vmin=min(archive_scores), vmax=max(archive_scores),
-            label=f'Archive (k={aco.archive_size})', zorder=5
-        )
+    # Left plot: solution scatter
+    scatter = ax1.scatter(
+        solutions_2d[:, 0], solutions_2d[:, 1],
+        c=scores, cmap='RdYlGn_r', s=200, alpha=0.85,
+        edgecolors='black', linewidth=1.5,
+        vmin=min(scores), vmax=max(scores),
+        label=n_label, zorder=5
+    )
 
-        # colorbar
-        if iteration == 0:
-            plot_aco_archive_live.cbar = plt.colorbar(scatter, ax=ax1)
-            plot_aco_archive_live.cbar.set_label('Fitness Score', fontsize=10)
-        else:
-            plot_aco_archive_live.cbar.update_normal(scatter)
+    # colorbar — create once, update after
+    if _fn.cbar is None:
+        _fn.cbar = plt.colorbar(scatter, ax=ax1)
+        _fn.cbar.set_label('Fitness Score', fontsize=10)
+    else:
+        _fn.cbar.update_normal(scatter)
 
-        # annotate rank on each solution
-        for rank, (sol, score) in enumerate(zip(solutions_2d, archive_scores)):
+    # rank annotations (ACO only)
+    if ranks:
+        for rank, (sol, score) in enumerate(zip(solutions_2d, scores)):
             ax1.annotate(f'#{rank+1}', (sol[0], sol[1]),
                         textcoords='offset points', xytext=(6, 6),
                         fontsize=8, color='black', fontweight='bold')
 
-        # highlight global best (rank 1 = top of archive)
-        best_sol = solutions_2d[0]
-        ax1.scatter(best_sol[0], best_sol[1],
-                   c='red', s=450, alpha=1.0, marker='*',
-                   edgecolors='black', linewidth=2,
-                   label=f'Best (score={aco.global_best_score:.2f})', zorder=10)
-
-        # draw weights as circle sizes (bigger circle = higher weight)
-        weights = aco._compute_weights()
-        for i, (sol, w) in enumerate(zip(solutions_2d, weights)):
+    # weight circles (ACO only)
+    if weights is not None:
+        for sol, w in zip(solutions_2d, weights):
             ax1.add_patch(plt.Circle(
                 (sol[0], sol[1]), radius=w * 15,
                 fill=False, edgecolor='blue', linewidth=1.5,
                 alpha=0.4, linestyle='--', zorder=3
             ))
 
+    # global / archive best — big red star
+    ax1.scatter(best_sol_2d[0], best_sol_2d[1],
+               c='red', s=450, alpha=1.0, marker='*',
+               edgecolors='black', linewidth=2,
+               label=best_label, zorder=10)
+
+    # fixed axes
+    padding = 5
+    ax1.set_xlim(bounds[0] - padding, bounds[1] + padding)
+    ax1.set_ylim(bounds[0] - padding, bounds[1] + padding)
+
+    # search bounds rectangle (dashed box)
+    ax1.add_patch(plt.Rectangle(
+        (bounds[0], bounds[0]),
+        bounds[1] - bounds[0], bounds[1] - bounds[0],
+        fill=False, edgecolor='gray', linewidth=2, linestyle='--', zorder=1
+    ))
+
     ax1.set_xlabel('Intersection 0: NS Green Time (s)', fontsize=11, fontweight='bold')
     ax1.set_ylabel('Intersection 0: EW Green Time (s)', fontsize=11, fontweight='bold')
-    ax1.set_title(f'ACO Archive - Iteration {iteration + 1}/{aco.num_iterations}',
-                 fontsize=13, fontweight='bold')
+    ax1.set_title(title, fontsize=13, fontweight='bold')
     ax1.legend(loc='upper left', fontsize=9, framealpha=0.9)
     ax1.grid(True, alpha=0.3, linestyle='--')
 
-    # search bounds rectangle
-    rect = plt.Rectangle(
-        (aco.bounds[0], aco.bounds[0]),
-        aco.bounds[1] - aco.bounds[0],
-        aco.bounds[1] - aco.bounds[0],
-        fill=False, edgecolor='gray', linewidth=2, linestyle='--', zorder=1
-    )
-    ax1.add_patch(rect)
+    # Right plot: convergence curve - identical for both methods
+    iters       = optimizer.history['iterations']
+    best_scores = optimizer.history['best_scores']
+    avg_scores  = optimizer.history['avg_scores']
 
-    padding = 5
-    ax1.set_xlim(aco.bounds[0] - padding, aco.bounds[1] + padding)
-    ax1.set_ylim(aco.bounds[0] - padding, aco.bounds[1] + padding)
-
-    # --- RIGHT PLOT: Convergence curve (identical style to PSO) ---
-
-    iterations = aco.history['iterations']
-    best_scores = aco.history['best_scores']
-    avg_scores = aco.history['avg_scores']
-
-    ax2.plot(iterations, best_scores, 'b-', linewidth=2.5, label='Best Score',
-            marker='o', markersize=5, markerfacecolor='blue', markeredgecolor='white')
-    ax2.plot(iterations, avg_scores, 'orange', linewidth=2, linestyle='--', alpha=0.8,
-            label='Average Score', marker='s', markersize=4)
-
-    ax2.fill_between(iterations, best_scores, avg_scores, alpha=0.2, color='blue')
+    ax2.plot(iters, best_scores, 'b-', linewidth=2.5, label='Best Score',
+             marker='o', markersize=5, markerfacecolor='blue', markeredgecolor='white')
+    ax2.plot(iters, avg_scores, 'orange', linewidth=2, linestyle='--', alpha=0.8,
+             label='Average Score', marker='s', markersize=4)
+    ax2.fill_between(iters, best_scores, avg_scores, alpha=0.2, color='blue')
 
     ax2.set_xlabel('Iteration', fontsize=11, fontweight='bold')
     ax2.set_ylabel('Objective Function Value', fontsize=11, fontweight='bold')
@@ -600,11 +1148,10 @@ def plot_aco_archive_live(aco, iteration: int):
     ax2.legend(loc='upper right', fontsize=10)
     ax2.grid(True, alpha=0.3, linestyle='--')
 
-    # annotate current best (identical to PSO version)
     if len(best_scores) > 0:
         improvement = ((best_scores[0] - best_scores[-1]) / best_scores[0] * 100) if best_scores[0] > 0 else 0
         ax2.text(0.02, 0.98,
-                f'Current Best: {aco.global_best_score:.2f}\nImprovement: {improvement:.1f}%',
+                f'Current Best: {best_score:.2f}\nImprovement: {improvement:.1f}%',
                 transform=ax2.transAxes, fontsize=10, fontweight='bold',
                 verticalalignment='top',
                 bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.7))
@@ -613,21 +1160,28 @@ def plot_aco_archive_live(aco, iteration: int):
     fig.canvas.draw()
     fig.canvas.flush_events()
 
-    # save frame every iteration (for convergence animation)
-    import config
-    save_convergence_frame(fig, 'aco', iteration, config.OUTPUT_DIR)
+    # save frame
+    save_convergence_frame(fig, method, iteration, config.OUTPUT_DIR)
 
-    # save on last iteration
-    if iteration == aco.num_iterations - 1:
+    # on final iteration (including early stop): save final PNG + stitch MP4, reset state for next run
+    if is_final:
         if not os.path.exists(config.OUTPUT_DIR):
             os.makedirs(config.OUTPUT_DIR)
-
-        save_path = os.path.join(config.OUTPUT_DIR, 'aco_archive_final.png')
+        save_path = os.path.join(config.OUTPUT_DIR, f'{method}_optimizer_final.png')
         fig.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"\n[SAVED] Final ACO archive plot saved to {save_path}")
+        print(f"\n[SAVED] Final {method.upper()} plot saved to {save_path}")
+        stitch_convergence_animation(method, config.OUTPUT_DIR)
+        # reset so next run (different scenario) gets a fresh figure
+        del _fn.fig, _fn.axes, _fn.cbar
 
-        # stitch all frames into MP4
-        stitch_convergence_animation('aco', config.OUTPUT_DIR)
+
+# --- backwards-compatible aliases so existing call sites need no changes ---
+def plot_pso_particles_live(pso, iteration: int, is_final: bool = False):
+    plot_optimizer_live(pso, iteration, method='pso', is_final=is_final)
+
+
+def plot_aco_archive_live(aco, iteration: int, is_final: bool = False):
+    plot_optimizer_live(aco, iteration, method='aco', is_final=is_final)
 
 
 def save_convergence_frame(fig, method: str, iteration: int, output_dir: str):
@@ -701,7 +1255,7 @@ def stitch_convergence_animation(method: str, output_dir: str):
 
 def create_traffic_animation(network, simulation_data: Dict, save_path: str = None):
     """
-    Create professional animated visualization with MASSIVE spacing.
+    Create professional animated visualization.
     """
     import config
     
