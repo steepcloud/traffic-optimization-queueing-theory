@@ -160,8 +160,8 @@ class TrafficSimulation:
         """
         while True:
             # Erlang-k inter-arrival time
-            k = config.ERLANG_K
-            theta = k / lane.arrival_rate  # scale parameter
+            k = 1
+            theta = 1.0 / lane.arrival_rate  # scale parameter
             inter_arrival_time = rd.gammavariate(k, theta)
             yield self.env.timeout(inter_arrival_time)
 
@@ -191,7 +191,7 @@ class TrafficSimulation:
 
         # Erlang-k service time (G in M/G/1)
         k = config.ERLANG_K
-        theta = k / lane.service_rate  # scale parameter
+        theta = 1.0 / (lane.service_rate * k)  # scale parameter
         service_time = rd.gammavariate(k, theta)
         yield self.env.timeout(service_time)
 
@@ -242,10 +242,11 @@ class TrafficSimulation:
             lane_max = max([q for t, q in self.queue_length_samples[lane.lane_id]], default=0)
             max_queue = max(max_queue, lane_max)
         
-        # count blocked intersections (queue > threshold)
+        # count blocked lanes (max queue > threshold during simulation)
         blocked_count = 0
         for lane in self.network.get_all_lanes():
-            if lane.current_queue_length > config.MAX_QUEUE_THRESHOLD:
+            lane_max = max([q for t, q in self.queue_length_samples[lane.lane_id]], default=0)
+            if lane_max > config.MAX_QUEUE_THRESHOLD:
                 blocked_count += 1
 
         metrics = {

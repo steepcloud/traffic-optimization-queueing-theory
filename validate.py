@@ -39,9 +39,9 @@ from network import Network
 from simulation import run_multiple_simulations
 from metrics import validate_queue_theory
 
-SERVICE_RATE = 0.4   # μ fixed throughout
+SERVICE_RATE = 0.4   # mu fixed throughout
 
-# utilization levels to test (ρ = λ/μ)
+# utilization levels to test (rho = lambda/mu)
 # avoid ρ > 0.92 -- simulation becomes very slow near saturation
 RHO_VALUES = [0.25, 0.375, 0.50, 0.625, 0.70, 0.75, 0.80, 0.875, 0.90, 0.925]
 
@@ -53,7 +53,7 @@ def run_validation():
 
     print("=" * 70)
     print("  M/G/1 MODEL VALIDATION  (Simulated vs Pollaczek-Khinchine Theory)")
-    print(f"  Service rate μ = {SERVICE_RATE}, Erlang-k = {config.ERLANG_K}")
+    print(f"  Service rate mu = {SERVICE_RATE}, Erlang-k = {config.ERLANG_K}")
     print(f"  Simulation duration = {config.SIMULATION_DURATION}s × {config.NUM_SIMULATION_RUNS} runs")
     print("=" * 70)
     print(f"\n{'ρ':>6}  {'λ':>6}  {'W_theory':>10}  {'W_sim':>10}  {'Error %':>8}  {'Verdict':>8}")
@@ -131,9 +131,9 @@ def run_validation():
 
 def _save_table(results):
     path = os.path.join(config.OUTPUT_DIR, 'validation_table.txt')
-    with open(path, 'w') as f:
+    with open(path, 'w', encoding='utf-8') as f:
         f.write("M/G/1 Model Validation — Simulated vs Pollaczek-Khinchine Theory\n")
-        f.write(f"Service rate μ={SERVICE_RATE}, Erlang-k={config.ERLANG_K}, "
+        f.write(f"Service rate mu={SERVICE_RATE}, Erlang-k={config.ERLANG_K}, "
                 f"Simulation={config.SIMULATION_DURATION}s × {config.NUM_SIMULATION_RUNS} runs\n\n")
         f.write(f"{'rho':>6}  {'lambda':>7}  {'W_theory':>10}  {'W_sim':>10}  "
                 f"{'Std_W':>7}  {'Error%':>8}  {'Verdict':>8}\n")
@@ -146,7 +146,7 @@ def _save_table(results):
             f.write("-" * 65 + "\n")
             f.write(f"  Average error: {np.mean([r['error_pct'] for r in results]):.2f}%\n")
             f.write(f"  Max error:     {np.max([r['error_pct'] for r in results]):.2f}%\n")
-    print(f"  Table saved → {path}")
+    print(f"  Table saved -> {path}")
 
 
 def _save_plot(results):
@@ -178,7 +178,7 @@ def _save_plot(results):
     ax.plot(rho_curve, W_curve, 'b-', linewidth=2, label='P-K Theory (M/G/1, k=2)')
     ax.errorbar(rhos, W_sim, yerr=std_W, fmt='ro', markersize=7,
                 capsize=4, label='Simulation (mean ± 1 std)')
-    ax.set_xlabel('Utilization ρ = λ/μ', fontsize=12)
+    ax.set_xlabel('Utilization rho = lambda/mu', fontsize=12)
     ax.set_ylabel('Average Waiting Time W (seconds)', fontsize=12)
     ax.set_title('M/G/1 Validation: Simulated vs Theoretical W', fontsize=13)
     ax.legend(fontsize=10)
@@ -203,7 +203,7 @@ def _save_plot(results):
     path = os.path.join(config.OUTPUT_DIR, 'validation_plot.png')
     plt.savefig(path, dpi=150, bbox_inches='tight')
     plt.close()
-    print(f"  Plot saved  → {path}")
+    print(f"  Plot saved  -> {path}")
 
 
 if __name__ == "__main__":
