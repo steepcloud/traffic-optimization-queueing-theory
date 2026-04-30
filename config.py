@@ -4,17 +4,16 @@ LANES_PER_INTERSECTION = 4 # North, South, East, West
 # Network topology - which intersections connect to which
 # Format: {intersection_id: [connected_intersection_ids]}
 NETWORK_TOPOLOGY = {
-    0: [1, 2], # Intersection 0 connects to 1 (East) and 2 (South)
-    1: [0, 3], # Intersection 1 connects to 0 (West) and 3 (South)
-    2: [0, 3], # Intersection 2 connects to 0 (North) and 3 (East)
-    3: [1, 2]  # Intersection 3 connects to 1 (North) and 2 (West)
+    0: [1, 2],
+    1: [0, 3],
+    2: [0, 3],
+    3: [1, 2],
 }
 
 # --- Traffic parameters (M/G/1 queue)
 # Arrival rates (λ) - vehicles per second for each lane
 # Lower values = less traffic, higher = more congestion
-ARRIVAL_RATE = 0.35 # vehicles/second (720 vehicles/hour per lane)
-
+ARRIVAL_RATE = 0.05 # vehicles/second (720 vehicles/hour per lane)
 # Queueing model
 QUEUEING_MODEL = 'M/G/1'    # M/G/1
 ERLANG_K = 2                 # shape parameter for Erlang-k distribution
@@ -31,12 +30,10 @@ LANE_ARRIVAL_RATES = {
 }
 
 # Use asymmetric rates if defined, otherwise uniform
-USE_ASYMMETRIC_TRAFFIC = True  # set to False to use uniform ARRIVAL_RATE
-
+USE_ASYMMETRIC_TRAFFIC = False  # set to False to use uniform ARRIVAL_RATE
 # Service rates (μ) - vehicles per second that can pass through green light
 # Dependent on green light duration and intersection capacity / saturation flow rate
-SERVICE_RATE = 0.4 # vehicles/second (1440 vehicles/hour per lane) (must be > ARRIVAL_RATE for stability)
-
+SERVICE_RATE = 0.15 # vehicles/second (1440 vehicles/hour per lane) (must be > ARRIVAL_RATE for stability)
 # Utilization ρ = λ / μ should be < 1 for queue stability
 # With current values: ρ = 0.2/0.4 = 0.5 (50% utilization - stable)
 
@@ -53,15 +50,12 @@ INITIAL_CYCLE_TIME = INITIAL_GREEN_TIME + INITIAL_RED_TIME + YELLOW_TIME
 # Optimization bounds for green light duration
 MIN_GREEN_TIME = 20  # minimum green time (safety constraint)
 MAX_GREEN_TIME = 90  # maximum green time (to prevent excessive wait times)
-
 # --- Simulation parameters
 
 # How long to run each simulation (in seconds)
-SIMULATION_DURATION = 1800  # 30 minutes of simulated traffic
-
+SIMULATION_DURATION = 3600  # 30 minutes of simulated traffic
 # Warmup period (seconds) - to let traffic stabilize before measurements
-WARMUP_PERIOD = 60  # 5 minutes
-
+WARMUP_PERIOD = 300  # 5 minutes
 # Random seed for reproducibility
 RANDOM_SEED = 42
 
@@ -76,7 +70,7 @@ PSO_CONFIG = {
     'w': 0.7,                   # Inertia weight (momentum)
     'c1': 1.5,                  # Cognitive coefficient (personal best)
     'c2': 1.5,                  # Social coefficient (global best)
-    'bounds': (MIN_GREEN_TIME, MAX_GREEN_TIME)  # Search space
+    'bounds': (20, 90)  # Search space
 }
 
 # --- Optimization parameters (ACO)
@@ -87,7 +81,7 @@ ACO_CONFIG = {
     'q': 0.5,                                       # Locality (small = exploit best, large = explore)
     'xi': 0.85,                                     # Evaporation rate (noise shrink factor)
     'num_iterations': 20,                           # Same as PSO (fair comparison)
-    'bounds': (MIN_GREEN_TIME, MAX_GREEN_TIME)      # Search space
+    'bounds': (20, 90)      # Search space
 }
 
 # --- Objective function weights
@@ -100,8 +94,7 @@ OBJECTIVE_WEIGHTS = {
 }
 
 # Maximum acceptable queue length (triggers penalty)
-MAX_QUEUE_THRESHOLD = 50  # vehicles
-
+MAX_QUEUE_THRESHOLD = 20  # vehicles
 # --- Visualization parameters
 
 # Whether to show plots during optimization (slows down, but informative)

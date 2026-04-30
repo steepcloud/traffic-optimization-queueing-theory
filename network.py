@@ -66,16 +66,18 @@ class TrafficLight:
     Simple 2-phase system: North-South green, then East-West green.
     """
 
-    def __init__(self, green_ns: float, green_ew: float, yellow: float = 3.0):
+    def __init__(self, green_ns: float, green_ew: float, yellow: float = 3.0, always_green: bool = False):
         """
         Args:
             green_ns (float): Green light duration for North-South lanes (seconds).
             green_ew (float): Green light duration for East-West lanes (seconds).
             yellow (float): Yellow light duration (seconds).
+            always_green (bool): If True, all directions are always green (for validation).
         """
         self.green_ns = green_ns
         self.green_ew = green_ew
         self.yellow = yellow
+        self.always_green = always_green
 
         # total cycle time
         self.cycle_time = green_ns + green_ew + 2 * yellow
@@ -105,6 +107,8 @@ class TrafficLight:
     
     def is_green(self, direction: str) -> bool:
         """Check if the light is green for a given direction."""
+        if self.always_green:
+            return True  # Always green for validation
         if self.current_phase == 0 and direction in ['N', 'S']:
             return True
         elif self.current_phase == 2 and direction in ['E', 'W']:
@@ -121,7 +125,7 @@ class Intersection:
     """
 
     def __init__(self, intersection_id: int, arrival_rate: float, service_rate: float,
-                 green_ns: float, green_ew: float):
+                 green_ns: float, green_ew: float, always_green: bool = False):
         """
         Args:
             intersection_id (int): Unique identifier for the intersection.
@@ -129,6 +133,7 @@ class Intersection:
             service_rate (float): Service rate (μ) for each lane (vehicles/second).
             green_ns (float): Initial green light duration for North-South lanes (seconds).
             green_ew (float): Initial green light duration for East-West lanes (seconds).
+            always_green (bool): If True, all directions are always green (for validation).
         """
         self.intersection_id = intersection_id
 
@@ -139,7 +144,7 @@ class Intersection:
             self.lanes[direction] = Lane(lane_id, direction, arrival_rate, service_rate)
 
         # traffic light controller
-        self.traffic_light = TrafficLight(green_ns=green_ns, green_ew=green_ew)
+        self.traffic_light = TrafficLight(green_ns=green_ns, green_ew=green_ew, always_green=always_green)
 
         # connections to other intersections (set by network)
         self.outgoing_connections: Dict[str, int] = {} # {direction: intersection_id}
@@ -159,7 +164,7 @@ class Network:
     """
 
     def __init__(self, num_intersections: int, topology: Dict[int, List[int]],
-                 arrival_rate: float, service_rate: float, initial_green: float):
+                 arrival_rate: float, service_rate: float, initial_green: float, always_green: bool = False):
         """
         Args:
             num_intersections (int): Total number of intersections in the network.
@@ -167,17 +172,18 @@ class Network:
             arrival_rate (float): Default arrival rate (λ) for all lanes (vehicles/second).
             service_rate (float): Default service rate (μ) for all lanes (vehicles/second).
             initial_green (float): Initial green light duration for all intersections (seconds).
+            always_green (bool): If True, all directions are always green (for validation).
         """
         self.num_intersections = num_intersections
         self.topology = topology
-        
+
         # all intersections
         self.intersections: Dict[int, Intersection] = {}
         for i in range(num_intersections):
             # use asymmetric rates if available, otherwise uniform
             if hasattr(config, 'USE_ASYMMETRIC_TRAFFIC') and config.USE_ASYMMETRIC_TRAFFIC:
                 self.intersections[i] = self._create_asymmetric_intersection(
-                    i, service_rate, initial_green
+                    i, service_rate, initial_green, always_green
                 )
             else:
                 self.intersections[i] = Intersection(
@@ -185,7 +191,8 @@ class Network:
                     arrival_rate=arrival_rate,
                     service_rate=service_rate,
                     green_ns=initial_green,
-                    green_ew=initial_green
+                    green_ew=initial_green,
+                    always_green=always_green
                 )
         
         # set up connections based on topology
@@ -279,8 +286,8 @@ class Network:
             
             self.intersections[int_id].outgoing_connections = connections
     
-    def _create_asymmetric_intersection(self, int_id: int, service_rate: float, 
-                                     initial_green: float) -> Intersection:
+    def _create_asymmetric_intersection(self, int_id: int, service_rate: float,
+                                     initial_green: float, always_green: bool = False) -> Intersection:
         """
         Create intersection with asymmetric per-lane arrival rates.
         """
@@ -288,16 +295,16 @@ class Network:
         intersection.intersection_id = int_id
         intersection.lanes = {}
         intersection.outgoing_connections = {}
-        
+
         # create lanes with individual arrival rates
         for i, direction in enumerate(['N', 'S', 'E', 'W']):
             lane_id = int_id * 4 + i
             lane_arrival = config.LANE_ARRIVAL_RATES[int_id][direction]
             intersection.lanes[direction] = Lane(lane_id, direction, lane_arrival, service_rate)
-        
+
         # create traffic light
-        intersection.traffic_light = TrafficLight(green_ns=initial_green, green_ew=initial_green)
-        
+        intersection.traffic_light = TrafficLight(green_ns=initial_green, green_ew=initial_green, always_green=always_green)
+
         return intersection
     
     def _auto_detect_layout(self) -> Dict[int, Tuple[int, int]]:
