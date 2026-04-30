@@ -6,13 +6,73 @@ to generate comprehensive analysis of all results.
 """
 
 import os
-import json
+import re
+import numpy as np
 from integrated_analysis import IntegratedAnalysisSuite
+
+
+def parse_log_file(log_path: str) -> dict:
+    """
+    Parse optimization log file to extract key metrics.
+    Specifically targets the FINAL optimized results, not baseline.
+    """
+    if not os.path.exists(log_path):
+        return None
+
+    metrics = {
+        'avg_waiting_time': None,
+        'max_queue_length': None,
+        'blocked_intersections': None,
+        'total_vehicles': None,
+        'computation_time': None,
+        'objective_value': None
+    }
+
+    with open(log_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+        performance_sections = re.findall(r'~~~~~ PERFORMANCE METRICS ~~~~~', content)
+
+        if len(performance_sections) >= 2:
+            second_match = content.find('~~~~~ PERFORMANCE METRICS ~~~~~')
+            if second_match != -1:
+                second_match = content.find('~~~~~ PERFORMANCE METRICS ~~~~~', second_match + 1)
+                if second_match != -1:
+                    final_section = content[second_match:]
+
+                    patterns = {
+                        'avg_waiting_time': r'Average Waiting Time:\s+([\d.]+)\s+seconds',
+                        'max_queue_length': r'Maximum Queue Length:\s+([\d.]+)\s+vehicles',
+                        'blocked_intersections': r'Blocked Intersections:\s+([\d.]+)',
+                        'total_vehicles': r'Total Vehicles Processed:\s+([\d.]+)',
+                        'objective_value': r'Objective Function Value:\s+([\d.]+)'
+                    }
+
+                    for key, pattern in patterns.items():
+                        match = re.search(pattern, final_section)
+                        if match:
+                            value = float(match.group(1))
+                            metrics[key] = value
+
+        time_match = re.search(r'Complete!\s+Total time:\s+([\d.]+)s', content)
+        if time_match:
+            metrics['computation_time'] = float(time_match.group(1))
+
+    for key in metrics:
+        if metrics[key] is not None:
+            if isinstance(metrics[key], (np.integer, np.floating)):
+                metrics[key] = float(metrics[key])
+            elif isinstance(metrics[key], np.bool_):
+                metrics[key] = bool(metrics[key])
+
+    if metrics['avg_waiting_time'] is not None and metrics['objective_value'] is not None:
+        return metrics
+    return None
 
 
 def load_scenario_results(archive_dir: str = "experiment_results") -> dict:
     """
     Load all scenario results from the archive directory.
+    Only loads scenarios that have actual results.
     """
     print(f"{'~' * 5} LOADING SCENARIO RESULTS {'~' * 5}")
 
@@ -28,17 +88,32 @@ def load_scenario_results(archive_dir: str = "experiment_results") -> dict:
         scenario_path = os.path.join(archive_dir, scenario_id)
         results_dict[scenario_id] = {}
 
+        has_results = False
+
         for method in ['pso', 'aco']:
             method_path = os.path.join(scenario_path, method)
             if os.path.exists(method_path):
-                results_file = os.path.join(method_path, 'optimization_results.json')
-                if os.path.exists(results_file):
-                    with open(results_file, 'r') as f:
-                        results_dict[scenario_id][method.upper()] = json.load(f)
-                else:
-                    print(f"  [!] No results file found for {scenario_id}/{method}")
+                log_files = [f for f in os.listdir(method_path) if f.startswith('run_') and f.endswith('.log')]
 
-    print(f"[*] Loaded results for {len(results_dict)} scenarios")
+                if log_files:
+                    log_file = sorted(log_files)[-1]
+                    log_path = os.path.join(method_path, log_file)
+
+                    metrics = parse_log_file(log_path)
+                    if metrics:
+                        results_dict[scenario_id][method.upper()] = metrics
+                        has_results = True
+                    else:
+                        print(f"  [!] Could not parse results from {log_file}")
+                else:
+                    print(f"  [!] No log files found for {scenario_id}/{method}")
+            else:
+                print(f"  [!] No results directory for {scenario_id}/{method}")
+
+        if not has_results:
+            del results_dict[scenario_id]
+
+    print(f"[*] Loaded results for {len(results_dict)} scenarios with actual data")
     print("~" * 60)
 
     return results_dict
@@ -107,10 +182,26 @@ def run_post_analysis(archive_dir: str = "experiment_results", output_dir: str =
 
     if not pso_results or not aco_results:
         print("[!] Need both PSO and ACO results for comparison")
+        print(f"[*] PSO results: {len(pso_results)} scenarios")
+        print(f"[*] ACO results: {len(aco_results)} scenarios")
         return
 
     print(f"[*] PSO results: {len(pso_results)} scenarios")
     print(f"[*] ACO results: {len(aco_results)} scenarios")
+
+    print(f"\n{'~' * 5} RESULTS SUMMARY {'~' * 5}")
+    for scenario_id in sorted(pso_results.keys()):
+        pso = pso_results[scenario_id]
+        aco = aco_results.get(scenario_id, {})
+
+        name = scenario_names.get(scenario_id, scenario_id)
+        print(f"\n{name}:")
+        print(f"  PSO:  {pso['avg_waiting_time']:.2f}s wait, {pso['objective_value']:.2f} objective")
+        if aco:
+            print(f"  ACO:  {aco['avg_waiting_time']:.2f}s wait, {aco['objective_value']:.2f} objective")
+            improvement = ((pso['avg_waiting_time'] - aco['avg_waiting_time']) / pso['avg_waiting_time'] * 100)
+            print(f"  Improvement: {improvement:.1f}%")
+    print("~" * 60)
 
     suite = IntegratedAnalysisSuite(output_dir=output_dir)
 

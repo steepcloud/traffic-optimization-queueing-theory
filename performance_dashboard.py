@@ -303,46 +303,53 @@ class PerformanceDashboard:
             print("[!] Need at least 2 algorithms for comparison matrix")
             return
 
-        fig, axes = plt.subplots(1, 3, figsize=(18, 5))
-
         metrics = ['avg_waiting_time', 'max_queue_length', 'blocked_intersections']
         metric_names = ['Avg Waiting Time (s)', 'Max Queue Length', 'Blocked Intersections']
 
+        short_labels = []
+        for scenario_id in scenarios:
+            short_id = scenario_id.split('_')[0] if '_' in scenario_id else scenario_id[:3]
+            short_labels.append(short_id)
+
         for idx, (metric, metric_name) in enumerate(zip(metrics, metric_names)):
-            ax = axes[idx]
+            fig, ax = plt.subplots(figsize=(8, max(12, len(scenarios) * 0.4)))
 
-            matrix = np.zeros((len(algorithms), len(scenarios)))
+            matrix = np.zeros((len(scenarios), len(algorithms)))
 
-            for i, algorithm in enumerate(algorithms):
-                for j, scenario_id in enumerate(scenarios):
+            for i, scenario_id in enumerate(scenarios):
+                for j, algorithm in enumerate(algorithms):
                     if algorithm in dashboard_data['scenarios'][scenario_id]['algorithms']:
                         metrics_data = dashboard_data['scenarios'][scenario_id]['algorithms'][algorithm]['performance_metrics']
                         matrix[i, j] = metrics_data.get(metric, 0)
 
             im = ax.imshow(matrix, aspect='auto', cmap='RdYlGn_r')
 
-            ax.set_xticks(np.arange(len(scenarios)))
-            ax.set_yticks(np.arange(len(algorithms)))
-            ax.set_xticklabels([f"S{s}" for s in scenarios], fontsize=9)
-            ax.set_yticklabels(algorithms, fontsize=10)
+            ax.set_xticks(np.arange(len(algorithms)))
+            ax.set_yticks(np.arange(len(scenarios)))
+            ax.set_xticklabels(algorithms, fontsize=11)
+            ax.set_yticklabels(short_labels, fontsize=9)
 
-            for i in range(len(algorithms)):
-                for j in range(len(scenarios)):
-                    text = ax.text(j, i, f'{matrix[i, j]:.1f}',
-                                 ha="center", va="center", color="black", fontsize=9)
+            for i in range(len(scenarios)):
+                for j in range(len(algorithms)):
+                    value = matrix[i, j]
+                    if value > 0:
+                        text_color = 'white' if value > np.mean(matrix) + np.std(matrix) else 'black'
+                        ax.text(j, i, f'{value:.1f}',
+                               ha="center", va="center", color=text_color, fontsize=8, fontweight='bold')
 
-            ax.set_title(f'{metric_name}\nby Algorithm and Scenario', fontsize=11, fontweight='bold')
-            ax.set_xlabel('Scenario', fontsize=10)
-            ax.set_ylabel('Algorithm', fontsize=10)
+            ax.set_title(f'{metric_name}\nComparison', fontsize=12, fontweight='bold')
+            ax.set_xlabel('Algorithm', fontsize=11)
+            ax.set_ylabel('Scenario', fontsize=11)
 
             cbar = plt.colorbar(im, ax=ax)
-            cbar.set_label(metric_name, fontsize=9)
+            cbar.set_label(metric_name, fontsize=10)
 
-        plt.tight_layout()
-        plot_path = os.path.join(self.output_dir, 'algorithm_comparison_matrix.png')
-        plt.savefig(plot_path, dpi=150, bbox_inches='tight')
-        plt.close()
-        print(f"[*] Algorithm comparison matrix saved to {plot_path}")
+            plt.tight_layout()
+            plot_path = os.path.join(self.output_dir, f'algorithm_comparison_{metric}.png')
+            plt.savefig(plot_path, dpi=150, bbox_inches='tight')
+            plt.close()
+            print(f"[*] {metric_name} comparison saved to {plot_path}")
+
         print("~" * 60)
 
     def create_executive_summary(self, dashboard_data: Dict) -> str:

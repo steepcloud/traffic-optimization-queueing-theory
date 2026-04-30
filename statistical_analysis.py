@@ -190,6 +190,24 @@ class StatisticalAnalyzer:
         return (lower, upper)
 
 
+def convert_to_native_types(obj):
+    """
+    Convert numpy types to native Python types for JSON serialization.
+    """
+    if isinstance(obj, dict):
+        return {key: convert_to_native_types(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_to_native_types(item) for item in obj]
+    elif isinstance(obj, (np.integer, np.floating)):
+        return float(obj)
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    elif isinstance(obj, np.ndarray):
+        return convert_to_native_types(obj.tolist())
+    else:
+        return obj
+
+
 def analyze_optimization_results(pso_results: Dict, aco_results: Dict,
                                  output_dir: str = "results") -> Dict:
     """
@@ -286,8 +304,10 @@ def analyze_optimization_results(pso_results: Dict, aco_results: Dict,
 
     os.makedirs(output_dir, exist_ok=True)
     analysis_path = os.path.join(output_dir, 'statistical_analysis.json')
+    analysis_native = convert_to_native_types(analysis)
+
     with open(analysis_path, 'w') as f:
-        json.dump(analysis, f, indent=2)
+        json.dump(analysis_native, f, indent=2)
 
     print(f"[*] Statistical analysis saved to {analysis_path}")
     print("~" * 60)
@@ -329,7 +349,8 @@ def format_statistical_summary(analysis: Dict) -> str:
                 lines.append(f"    Significant: {'YES' if results['significant'] else 'NO'} (p={results['p_value']:.4f})")
                 if 'effect_size' in results:
                     effect = results['effect_size']
-                    lines.append(f"    Effect Size: {effect['cohens_d']:.3f} ({effect['interpretation']})")
+                    if 'cohens_d' in effect:
+                        lines.append(f"    Effect Size: {effect['cohens_d']:.3f} ({effect['interpretation']})")
 
     lines.append("\n" + "~" * 60)
 
