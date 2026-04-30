@@ -1,18 +1,3 @@
-"""
-validate.py
-===========
-Model validation: compare simulated M/G/1 results against
-Pollaczek-Khinchine (P-K) theoretical values across multiple
-utilization levels (ρ).
-
-Run once before dissertation submission:
-    python validate.py
-
-Produces:
-    results/validation_table.txt   -- printable table for dissertation
-    results/validation_plot.png    -- W_sim vs W_theory curve
-"""
-
 import numpy as np
 import os
 import sys
