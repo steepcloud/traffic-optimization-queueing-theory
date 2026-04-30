@@ -160,7 +160,7 @@ class TrafficSimulation:
         """
         while True:
             # Erlang-k inter-arrival time
-            k = 1
+            k = config.ERLANG_K
             theta = 1.0 / lane.arrival_rate  # scale parameter
             inter_arrival_time = rd.gammavariate(k, theta)
             yield self.env.timeout(inter_arrival_time)
