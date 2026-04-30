@@ -5,12 +5,11 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-# patch config before importing project modules
 import config
 config.USE_ASYMMETRIC_TRAFFIC = False   # force uniform rates for clean theory comparison
 config.ERLANG_K = 2                      # M/G/1 with Erlang-2
 config.QUEUEING_MODEL = 'M/G/1'
-config.NUM_INTERSECTIONS = 1             # single intersection -- matches theory exactly
+config.NUM_INTERSECTIONS = 1             # single intersection
 config.NETWORK_TOPOLOGY = {0: []}        # isolated intersection, no connections
 config.SIMULATION_DURATION = 3600        # 1 hour -- more stable estimates
 config.WARMUP_PERIOD = 300               # 5 min warmup
@@ -41,20 +40,21 @@ def run_validation():
     print(f"  Service rate mu = {SERVICE_RATE}, Erlang-k = {config.ERLANG_K}")
     print(f"  Simulation duration = {config.SIMULATION_DURATION}s × {config.NUM_SIMULATION_RUNS} runs")
     print("=" * 70)
-    print(f"\n{'ρ':>6}  {'λ':>6}  {'W_theory':>10}  {'W_sim':>10}  {'Error %':>8}  {'Verdict':>8}")
+    print(f"\n{'rho':>6}  {'lambda':>6}  {'W_theory':>10}  {'W_sim':>10}  {'Error %':>8}  {'Verdict':>8}")
     print("-" * 60)
 
     for rho in RHO_VALUES:
         arrival_rate = rho * SERVICE_RATE
         config.ARRIVAL_RATE = arrival_rate
 
-        # single-intersection network
+        # single-intersection network with always-green lights for validation
         network = Network(
             num_intersections=1,
             topology={0: []},
             arrival_rate=arrival_rate,
             service_rate=SERVICE_RATE,
-            initial_green=config.INITIAL_GREEN_TIME
+            initial_green=config.INITIAL_GREEN_TIME,
+            always_green=True  # Disable traffic light cycles for M/G/1 validation
         )
 
         # run simulation

@@ -51,7 +51,7 @@ class TrafficSimulation:
         if random_seed is not None:
             rd.seed(random_seed)
             np.random.seed(random_seed)
-        
+
         # track all vehicles
         self.vehicles: List[Vehicle] = []
         self.vehicle_counter = 0
@@ -60,11 +60,16 @@ class TrafficSimulation:
         self.queue_length_samples: Dict[int, List[Tuple[float, int]]] = {}
         for lane in network.get_all_lanes():
             self.queue_length_samples[lane.lane_id] = []
-        
+
         # traffic light state tracking
         self.light_state_samples: Dict[int, List[Tuple[float, int]]] = {}
         for int_id in network.intersections.keys():
             self.light_state_samples[int_id] = []
+
+        # create server resources for each lane (for proper M/G/1 queueing)
+        self.lane_servers: Dict[int, simpy.Resource] = {}
+        for lane in network.get_all_lanes():
+            self.lane_servers[lane.lane_id] = simpy.Resource(self.env, capacity=1)
         
 
     def run(self) -> Dict:
@@ -160,7 +165,7 @@ class TrafficSimulation:
         """
         while True:
             # Erlang-k inter-arrival time
-            k = config.ERLANG_K
+            k = 1
             theta = 1.0 / lane.arrival_rate  # scale parameter
             inter_arrival_time = rd.gammavariate(k, theta)
             yield self.env.timeout(inter_arrival_time)
@@ -185,25 +190,30 @@ class TrafficSimulation:
         Process for a vehicle waiting in queue and departing.
         M/G/1: Erlang-k service times (G = General service distribution).
         """
-        # wait until green light
-        while not intersection.traffic_light.is_green(lane.direction):
-            yield self.env.timeout(0.1)  # check every 0.1s
+        # request the server (vehicles wait if server is busy)
+        server = self.lane_servers[lane.lane_id]
+        with server.request() as request:
+            yield request  # wait for server to be available
 
-        # Erlang-k service time (G in M/G/1)
-        k = config.ERLANG_K
-        theta = 1.0 / (lane.service_rate * k)  # scale parameter
-        service_time = rd.gammavariate(k, theta)
-        yield self.env.timeout(service_time)
+            # wait until green light
+            while not intersection.traffic_light.is_green(lane.direction):
+                yield self.env.timeout(0.1)  # check every 0.1s
 
-        # vehicle departs
-        lane.current_queue_length -= 1
-        lane.total_vehicles_served += 1
+            # Erlang-k service time (G in M/G/1)
+            k = config.ERLANG_K
+            theta = 1.0 / (lane.service_rate * k)  # scale parameter (mean = k/μ)
+            service_time = rd.gammavariate(k, theta)
+            yield self.env.timeout(service_time)
 
-        vehicle.calculate_waiting_time(self.env.now)
+            # vehicle departs
+            lane.current_queue_length -= 1
+            lane.total_vehicles_served += 1
 
-        # only count vehicles after warm-up period
-        if self.env.now >= self.warmup:
-            lane.total_waiting_time += vehicle.waiting_time
+            vehicle.calculate_waiting_time(self.env.now)
+
+            # only count vehicles after warm-up period
+            if self.env.now >= self.warmup:
+                lane.total_waiting_time += vehicle.waiting_time
     
     def monitor_queues(self):
         """
@@ -212,10 +222,12 @@ class TrafficSimulation:
         while True:
             yield self.env.timeout(10) # sample every 10 seconds
 
-            # record queue lengths
+            # record queue lengths (actual queue length from server)
             for lane in self.network.get_all_lanes():
+                server = self.lane_servers[lane.lane_id]
+                queue_length = len(server.queue) + server.count  # waiting + being served
                 self.queue_length_samples[lane.lane_id].append(
-                    (self.env.now, lane.current_queue_length)
+                    (self.env.now, queue_length)
                 )
 
     def calculate_metrics(self) -> Dict:
@@ -249,13 +261,23 @@ class TrafficSimulation:
             if lane_max > config.MAX_QUEUE_THRESHOLD:
                 blocked_count += 1
 
+        # calculate time-averaged queue length
+        avg_queue_length = 0.0
+        total_samples = 0
+        for lane in self.network.get_all_lanes():
+            samples = self.queue_length_samples[lane.lane_id]
+            if samples:
+                avg_queue_length += np.mean([q for t, q in samples])
+                total_samples += 1
+        if total_samples > 0:
+            avg_queue_length /= total_samples
+
         metrics = {
             'avg_waiting_time': avg_waiting_time,
             'max_queue_length': max_queue,
             'total_vehicles': len(valid_vehicles),
             'blocked_intersections': blocked_count,
-            'avg_queue_length': np.mean([lane.current_queue_length
-                                         for lane in self.network.get_all_lanes()]),
+            'avg_queue_length': avg_queue_length,
             'queue_samples': self.queue_length_samples,
             'light_states': self.light_state_samples
         }
