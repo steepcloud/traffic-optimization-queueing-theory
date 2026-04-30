@@ -18,7 +18,7 @@
 :: --- Configuration ---
 :: If python is not on your PATH, replace "python" with the full path,
 :: e.g.: set PYTHON=C:\Users\YourName\AppData\Local\Programs\Python\Python311\python.exe
-set PYTHON=.venv\Scripts\python.exe
+set PYTHON=python
 
 :: Root folder where all scenario archives will be stored
 set ARCHIVE_DIR=experiment_results
@@ -64,6 +64,31 @@ echo ============================================================
 echo   Done! Results saved to: %ARCHIVE_DIR%\
 echo ============================================================
 echo.
+
+:: ---------------------------------------------------------------
+:: Run post-scenario analysis if scenarios completed successfully
+echo.
+echo ============================================================
+echo   Running Post-Scenario Analysis...
+echo ============================================================
+echo.
+
+%PYTHON% post_scenario_analysis.py ^
+    --archive-dir %ARCHIVE_DIR% ^
+    --output-dir %RESULTS_DIR%
+
+if %ERRORLEVEL% NEQ 0 (
+    echo.
+    echo [WARN] Post-scenario analysis encountered issues (non-critical)
+    echo Analysis may be incomplete. Check output above for details.
+    echo.
+) else (
+    echo.
+    echo ============================================================
+    echo   Analysis Complete! Check %RESULTS_DIR%\ for outputs
+    echo ============================================================
+    echo.
+)
 
 :: Keep window open so you can read the final summary
 pause
