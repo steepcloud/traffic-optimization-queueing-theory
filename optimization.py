@@ -68,8 +68,8 @@ class PSO:
         self.num_processes = num_processes or os.cpu_count()
 
         # early stopping parameters
-        self.patience = 5  # stop if no improvement for 5 iterations
-        self.min_improvement = 0.01  # minimum 1% improvement threshold
+        self.patience = 10  # stop if no improvement for 10 iterations
+        self.min_improvement = 0.005  # minimum 0.5% improvement threshold
         self.best_score_history = []
     
     def optimize(self, verbose: int = 1) -> Tuple[np.ndarray, float]:
@@ -232,8 +232,8 @@ class ACO:
         self.num_processes = num_processes or os.cpu_count()
 
         # early stopping
-        self.patience = 5
-        self.min_improvement = 0.01
+        self.patience = 10  # stop if no improvement for 10 iterations (was 5)
+        self.min_improvement = 0.005  # minimum 0.5% improvement threshold (was 1%)
         self.best_score_history = []
 
 
