@@ -684,9 +684,15 @@ def patch_config(original: str, overrides: dict) -> str:
             m = re.search(r'^MAX_GREEN_TIME\s*=\s*(\d+)', content, re.MULTILINE)
             max_g = int(m.group(1)) if m else 90
         bounds_str = f"({min_g}, {max_g})"
-        # replace bounds in PSO_CONFIG and ACO_CONFIG
+
         content = re.sub(
             r"('bounds'\s*:\s*)\(MIN_GREEN_TIME,\s*MAX_GREEN_TIME\)",
+            f"\\1{bounds_str}",
+            content
+        )
+
+        content = re.sub(
+            r"('bounds'\s*:\s*)\(\d+,\s*\d+\)",
             f"\\1{bounds_str}",
             content
         )

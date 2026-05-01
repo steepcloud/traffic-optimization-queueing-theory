@@ -14,7 +14,7 @@ from integrated_analysis import IntegratedAnalysisSuite
 def parse_log_file(log_path: str) -> dict:
     """
     Parse optimization log file to extract key metrics.
-    Specifically targets the FINAL optimized results, not baseline.
+    Extracts the 5 individual run values from the FINAL optimized results, not baseline.
     """
     if not os.path.exists(log_path):
         return None
@@ -25,7 +25,8 @@ def parse_log_file(log_path: str) -> dict:
         'blocked_intersections': None,
         'total_vehicles': None,
         'computation_time': None,
-        'objective_value': None
+        'objective_value': None,
+        'individual_runs': []  # store the 5 individual run values
     }
 
     with open(log_path, 'r', encoding='utf-8') as f:
@@ -33,10 +34,20 @@ def parse_log_file(log_path: str) -> dict:
         performance_sections = re.findall(r'~~~~~ PERFORMANCE METRICS ~~~~~', content)
 
         if len(performance_sections) >= 2:
-            second_match = content.find('~~~~~ PERFORMANCE METRICS ~~~~~')
-            if second_match != -1:
-                second_match = content.find('~~~~~ PERFORMANCE METRICS ~~~~~', second_match + 1)
+            first_match = content.find('~~~~~ PERFORMANCE METRICS ~~~~~')
+            if first_match != -1:
+                second_match = content.find('~~~~~ PERFORMANCE METRICS ~~~~~', first_match + 1)
                 if second_match != -1:
+                    optimized_section = content[first_match:second_match]
+                    complete_match = re.search(r'(PSO|ACO) Complete!', optimized_section)
+                    if complete_match:
+                        after_complete = optimized_section[complete_match.end():]
+                        individual_runs_pattern = r'Run (\d+)/5: Avg Wait = ([\d.]+)s'
+                        individual_runs = re.findall(individual_runs_pattern, after_complete)
+
+                        if individual_runs:
+                            metrics['individual_runs'] = [float(run[1]) for run in individual_runs]
+
                     final_section = content[second_match:]
 
                     patterns = {
@@ -64,7 +75,9 @@ def parse_log_file(log_path: str) -> dict:
             elif isinstance(metrics[key], np.bool_):
                 metrics[key] = bool(metrics[key])
 
-    if metrics['avg_waiting_time'] is not None and metrics['objective_value'] is not None:
+    if metrics['individual_runs'] and len(metrics['individual_runs']) == 5:
+        return metrics
+    elif metrics['avg_waiting_time'] is not None and metrics['objective_value'] is not None:
         return metrics
     return None
 

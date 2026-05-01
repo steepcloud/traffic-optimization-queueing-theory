@@ -70,7 +70,7 @@ PSO_CONFIG = {
     'w': 0.7,                   # Inertia weight (momentum)
     'c1': 1.5,                  # Cognitive coefficient (personal best)
     'c2': 1.5,                  # Social coefficient (global best)
-    'bounds': (20, 90)  # Search space
+    'bounds': (MIN_GREEN_TIME, MAX_GREEN_TIME)  # Search space
 }
 
 # --- Optimization parameters (ACO)
@@ -81,7 +81,7 @@ ACO_CONFIG = {
     'q': 0.5,                                       # Locality (small = exploit best, large = explore)
     'xi': 0.85,                                     # Evaporation rate (noise shrink factor)
     'num_iterations': 20,                           # Same as PSO (fair comparison)
-    'bounds': (20, 90)      # Search space
+    'bounds': (MIN_GREEN_TIME, MAX_GREEN_TIME)      # Search space
 }
 
 # --- Objective function weights

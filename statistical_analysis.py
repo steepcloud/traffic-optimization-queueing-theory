@@ -246,7 +246,10 @@ def analyze_optimization_results(pso_results: Dict, aco_results: Dict,
                 pso_value = pso_data[metric]
                 aco_value = aco_data[metric]
 
-                if isinstance(pso_value, (int, float)):
+                if 'individual_runs' in pso_data and 'individual_runs' in aco_data:
+                    pso_values = np.array(pso_data['individual_runs'])
+                    aco_values = np.array(aco_data['individual_runs'])
+                elif isinstance(pso_value, (int, float)):
                     pso_values = np.array([pso_value])
                     aco_values = np.array([aco_value])
                 else:
@@ -278,9 +281,14 @@ def analyze_optimization_results(pso_results: Dict, aco_results: Dict,
 
     for scenario in scenarios:
         if scenario in pso_results and scenario in aco_results:
-            if 'avg_waiting_time' in pso_results[scenario]:
+            if 'individual_runs' in pso_results[scenario]:
+                all_pso_waiting.extend(pso_results[scenario]['individual_runs'])
+            elif 'avg_waiting_time' in pso_results[scenario]:
                 all_pso_waiting.append(pso_results[scenario]['avg_waiting_time'])
-            if 'avg_waiting_time' in aco_results[scenario]:
+
+            if 'individual_runs' in aco_results[scenario]:
+                all_aco_waiting.extend(aco_results[scenario]['individual_runs'])
+            elif 'avg_waiting_time' in aco_results[scenario]:
                 all_aco_waiting.append(aco_results[scenario]['avg_waiting_time'])
 
     if len(all_pso_waiting) >= 2 and len(all_aco_waiting) >= 2:
