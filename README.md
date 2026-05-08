@@ -146,12 +146,34 @@ The project includes 30 experimental scenarios organized into seven groups:
 - Maximum queue length improvement: 9.9%
 - PSO achieves faster computation (10.7% faster on average)
 
+#### Algorithm Performance Visualizations
+
+![Performance Comparison](docs/figures/performance_comparison.png)
+*Performance Comparison Across All Scenarios*
+
+![Winner Summary](docs/figures/winner_summary.png)
+*Which Algorithm Won Each Scenario*
+
+![Performance Overview](docs/figures/performance_overview.png)
+*Overall Performance Overview*
+
 ### Traffic Load Effects
 
 - Low traffic (rho=0.33): Minimal benefit (2-6% improvement)
 - Medium traffic (rho=0.60): Moderate benefit (10-11% improvement)
 - High traffic (rho=0.80): Maximum benefit (23% improvement)
 - Near saturation (rho=0.95): Neither algorithm effective; demand management required
+
+#### Detailed Algorithm Comparisons
+
+![Average Waiting Time Comparison](docs/figures/algorithm_comparison_avg_waiting_time.png)
+*Average Waiting Time by Scenario*
+
+![Maximum Queue Length Comparison](docs/figures/algorithm_comparison_max_queue_length.png)
+*Maximum Queue Length by Scenario*
+
+![Blocked Intersections Comparison](docs/figures/algorithm_comparison_blocked_intersections.png)
+*Blocked Intersections by Scenario*
 
 ### Validation Results
 
