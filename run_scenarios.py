@@ -24,7 +24,6 @@ import subprocess
 import argparse
 import re
 from datetime import datetime
-from copy import deepcopy
 
 
 # ---------------------------------------------------------------------------
@@ -621,15 +620,16 @@ def patch_config(original: str, overrides: dict) -> str:
     Apply overrides to the config file content.
     Handles scalars, booleans, strings, dicts.
     For MIN_GREEN_TIME / MAX_GREEN_TIME also patches PSO_CONFIG and ACO_CONFIG bounds inline.
+
+    Nested dict keys use double-underscore notation: "PSO_CONFIG__w" patches PSO_CONFIG['w'].
     """
     content = original
 
     for key, value in overrides.items():
         if key.startswith('_'):
-            continue  # skip metadata keys like _description
+            continue
 
         if isinstance(value, dict):
-            # replace the entire dict assignment (multi-line)
             content = _replace_dict_var(content, key, value)
         elif isinstance(value, bool):
             content = _replace_scalar(content, key, str(value))
@@ -637,22 +637,20 @@ def patch_config(original: str, overrides: dict) -> str:
             content = _replace_scalar(content, key, f"'{value}'")
         else:
             content = _replace_scalar(content, key, repr(value))
-    
-    # handle nested dict keys (e.g. "PSO_CONFIG__w": 0.4 patches PSO_CONFIG['w'])
+
     for key, value in overrides.items():
         if '__' not in key or key.startswith('_'):
             continue
         parent, child = key.split('__', 1)
-        # use regex to find and replace the specific key inside the parent dict
+
         pattern = rf"('{re.escape(child)}'\s*:\s*)[\d.]+"
         replacement = rf"\g<1>{repr(value)}"
-        # only replace within the parent dict block
-        # find the parent dict in content first
+
         parent_match = re.search(rf'^{re.escape(parent)}\s*=\s*\{{', content, re.MULTILINE)
         if not parent_match:
             print(f"  [WARN] Parent key '{parent}' not found for nested override '{key}'")
             continue
-        # find the end of the parent dict
+
         start = parent_match.start()
         brace_start = content.index('{', start)
         depth, i = 0, brace_start
@@ -664,19 +662,16 @@ def patch_config(original: str, overrides: dict) -> str:
                     end = i + 1
                     break
             i += 1
-        # replace only within that block
+
         block = content[brace_start:end]
         new_block, n = re.subn(pattern, replacement, block)
         if n == 0:
             print(f"  [WARN] Nested key '{child}' not found inside '{parent}'")
         content = content[:brace_start] + new_block + content[end:]
 
-    # After patching MIN/MAX_GREEN_TIME, also update the bounds tuples inside
-    # PSO_CONFIG and ACO_CONFIG so they reflect the new values.
     min_g = overrides.get('MIN_GREEN_TIME')
     max_g = overrides.get('MAX_GREEN_TIME')
     if min_g is not None or max_g is not None:
-        # extract current values from patched content if not both overridden
         if min_g is None:
             m = re.search(r'^MIN_GREEN_TIME\s*=\s*(\d+)', content, re.MULTILINE)
             min_g = int(m.group(1)) if m else 20
@@ -690,7 +685,6 @@ def patch_config(original: str, overrides: dict) -> str:
             f"\\1{bounds_str}",
             content
         )
-
         content = re.sub(
             r"('bounds'\s*:\s*)\(\d+,\s*\d+\)",
             f"\\1{bounds_str}",
@@ -715,7 +709,6 @@ def _replace_dict_var(content: str, key: str, new_dict: dict) -> str:
     Replace a multi-line dict assignment for `key` with a formatted version.
     Matches:  KEY = {  ...  }  (handles nested braces).
     """
-    # find start of assignment
     start_pattern = re.compile(rf'^{re.escape(key)}\s*=\s*\{{', re.MULTILINE)
     m = start_pattern.search(content)
     if not m:
@@ -799,11 +792,9 @@ def run_scenario(scenario_name: str, scenario: dict, methods: list,
     print(f"  {desc}")
     print(f"{'='*70}")
 
-    # load original config
     original_config = load_config(config_path)
 
     try:
-        # patch config
         patched = patch_config(original_config, scenario)
         save_config(config_path, patched)
         print(f"  config.py patched OK")
@@ -812,18 +803,16 @@ def run_scenario(scenario_name: str, scenario: dict, methods: list,
             print(f"\n  >>> Running --method {method.upper()} ...")
             result = subprocess.run(
                 [python_exe, "main.py", "--method", method, "--scenario", scenario_name],
-                capture_output=False,   # let output flow to terminal
+                capture_output=False,
             )
 
             if result.returncode != 0:
                 print(f"  [ERROR] main.py exited with code {result.returncode} "
                       f"for scenario {scenario_name} / {method}")
 
-            # archive results
             dest = os.path.join(archive_root, scenario_name, method)
             copy_results(results_dir, dest)
 
-            # write a small metadata file so you know what settings produced these
             meta_path = os.path.join(dest, "scenario_info.txt")
             with open(meta_path, 'w', encoding='utf-8') as f:
                 f.write(f"Scenario: {scenario_name}\n")
@@ -835,11 +824,10 @@ def run_scenario(scenario_name: str, scenario: dict, methods: list,
                     if not k.startswith('_'):
                         f.write(f"  {k} = {v!r}\n")
 
-            # clear results/ for next run
             clear_results(results_dir)
 
     finally:
-        # ALWAYS restore original config
+        # always restore, even if main.py crashes mid-run
         save_config(config_path, original_config)
         print(f"  config.py restored to original.")
 
@@ -871,10 +859,9 @@ def main():
         print()
         return
 
-    # determine which scenarios to run
     names = list(SCENARIOS.keys())
     if args.only:
-        # support short names like "1A" matching "1A_low_traffic"
+        # short names like "1A" match "1A_low_traffic"
         names = [n for n in names if any(n.startswith(o) for o in args.only)]
     if args.skip:
         names = [n for n in names if not any(n.startswith(s) for s in args.skip)]
@@ -883,8 +870,8 @@ def main():
         print("[ERROR] No matching scenarios found. Use --list to see available scenarios.")
         sys.exit(1)
 
-    config_path = os.path.abspath(args.config)
-    results_dir = os.path.abspath(args.results_dir)
+    config_path  = os.path.abspath(args.config)
+    results_dir  = os.path.abspath(args.results_dir)
     archive_root = os.path.abspath(args.archive_dir)
 
     os.makedirs(results_dir, exist_ok=True)
@@ -914,10 +901,8 @@ def main():
         except Exception as e:
             print(f"\n[FATAL] Scenario {name} crashed: {e}")
             failed.append(name)
-            # still try to restore config
             try:
-                original = load_config(config_path)
-                save_config(config_path, original)
+                save_config(config_path, load_config(config_path))
             except Exception:
                 pass
 

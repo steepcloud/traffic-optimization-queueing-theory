@@ -5,10 +5,9 @@ from typing import Dict, List, Tuple
 from network import Network, Intersection, Lane
 import config
 
+
 class Vehicle:
-    """
-    Represents a single vehicle in the system.
-    """
+    """Single vehicle travelling through the network."""
 
     def __init__(self, vehicle_id: int, arrival_time: float, lane: Lane):
         self.vehicle_id = vehicle_id
@@ -18,259 +17,171 @@ class Vehicle:
         self.waiting_time = 0.0
 
     def calculate_waiting_time(self, departure_time: float):
-        """Calculate total time spent in system."""
         self.departure_time = departure_time
-        self.waiting_time = self.departure_time - self.arrival_time
+        self.waiting_time = departure_time - self.arrival_time
 
 
 class TrafficSimulation:
     """
-    Main simulation engine using SimPy.
-    Implements M/G/1 queueing for each lane.
-    Erlang-k inter-arrival and service times model realistic traffic platooning.
+    SimPy-based traffic simulation using M/G/1 queues.
+
+    Each lane is modelled as an M/G/1 queue with Erlang-k service times.
+    Inter-arrival times use k=1 (exponential / Poisson arrivals).
     """
 
     def __init__(self, network: Network, duration: float, warmup: float = 0,
                  random_seed: int = None, verbose: int = 0):
         """
         Args:
-            network: Traffic network to simulate
-            duration: Simulation duration (seconds)
-            warmup: Warm-up period to discard (seconds)
-            random_seed: Random seed for reproducibility
-            verbose: Verbosity level (0=silent, 1=basic, 2=detailed)
+            network: Traffic network to simulate.
+            duration: Simulation duration (seconds).
+            warmup: Warm-up period whose vehicles are excluded from metrics (seconds).
+            random_seed: Seed for reproducibility.
+            verbose: 0=silent, 1=basic, 2=detailed.
         """
         self.network = network
         self.duration = duration
         self.warmup = warmup
         self.verbose = verbose
 
-        # simpy env
         self.env = simpy.Environment()
 
         if random_seed is not None:
             rd.seed(random_seed)
             np.random.seed(random_seed)
 
-        # track all vehicles
         self.vehicles: List[Vehicle] = []
         self.vehicle_counter = 0
 
-        # queue length tracking (for time-average calculations)
-        self.queue_length_samples: Dict[int, List[Tuple[float, int]]] = {}
-        for lane in network.get_all_lanes():
-            self.queue_length_samples[lane.lane_id] = []
+        all_lanes = network.get_all_lanes()
 
-        # traffic light state tracking
-        self.light_state_samples: Dict[int, List[Tuple[float, int]]] = {}
-        for int_id in network.intersections.keys():
-            self.light_state_samples[int_id] = []
-
-        # create server resources for each lane (for proper M/G/1 queueing)
-        self.lane_servers: Dict[int, simpy.Resource] = {}
-        for lane in network.get_all_lanes():
-            self.lane_servers[lane.lane_id] = simpy.Resource(self.env, capacity=1)
-        
+        self.queue_length_samples: Dict[int, List[Tuple[float, int]]] = {
+            lane.lane_id: [] for lane in all_lanes
+        }
+        self.light_state_samples: Dict[int, List[Tuple[float, int]]] = {
+            int_id: [] for int_id in network.intersections
+        }
+        self.lane_servers: Dict[int, simpy.Resource] = {
+            lane.lane_id: simpy.Resource(self.env, capacity=1) for lane in all_lanes
+        }
 
     def run(self) -> Dict:
-        """
-        Run the simulation and return performance metrics.
-        Returns:
-            Dictionary with metrics: avg_waiting_time, max_queue, etc.
-        """
-        # reset network statistics
+        """Run the simulation and return performance metrics."""
         self.network.reset_all_stats()
         self.vehicles = []
         self.vehicle_counter = 0
 
-        # start processes for each intersection
         for intersection in self.network.intersections.values():
-            # traffic light controller
             self.env.process(self.traffic_light_controller(intersection))
-
-            # vehicle arrival processes for each incoming lane
             for lane in intersection.lanes.values():
                 self.env.process(self.vehicle_arrivals(intersection, lane))
 
-        # start queue monitoring
         self.env.process(self.monitor_queues())
-
-        # run simulation
         self.env.run(until=self.duration)
 
-        # calculate and return metrics
         return self.calculate_metrics()
 
-
     def traffic_light_controller(self, intersection: Intersection):
-        """
-        Process that controls traffic light phase changes.
-        """
+        """SimPy process: cycles the traffic light through its 4 phases."""
         light = intersection.traffic_light
 
         while True:
-            # track current phase state
             self.light_state_samples[intersection.intersection_id].append(
                 (self.env.now, light.current_phase)
             )
 
-            # get current phase duration
             phase_duration = light.get_phase_duration(light.current_phase)
 
             if self.verbose >= 2:
                 print(f"[{self.env.now:.1f}s] Intersection {intersection.intersection_id}: "
                       f"Phase {light.current_phase} for {phase_duration}s")
-            
-            # wait for phase duration
+
             yield self.env.timeout(phase_duration)
+            light.current_phase = (light.current_phase + 1) % 4
 
-            # move to the next phase
-            light.current_phase = (light.current_phase + 1) % 4 # assuming 4 phases, todo: maybe modify this
-    
-
-    '''
     def vehicle_arrivals(self, intersection: Intersection, lane: Lane):
         """
-        Process that generates vehicle arrivals (Poisson process).
-        M/M/1: Exponential inter-arrival times.
-        """
+        SimPy process: generates vehicles with Erlang-k=1 (exponential) inter-arrival times.
 
+        k is fixed at 1 here to produce Poisson arrivals (M in M/G/1).
+        Service times use config.ERLANG_K which may differ.
+        """
         while True:
-            # exponential inter-arrival time (Poisson process)
-            inter_arrival_time = rd.expovariate(lane.arrival_rate)
+            inter_arrival_time = rd.gammavariate(1, 1.0 / lane.arrival_rate)
             yield self.env.timeout(inter_arrival_time)
-        
-            # create new vehicle
-            vehicle = Vehicle(vehicle_id=self.vehicle_counter,
-                              arrival_time=self.env.now,
-                              lane=lane)
+
+            vehicle = Vehicle(
+                vehicle_id=self.vehicle_counter,
+                arrival_time=self.env.now,
+                lane=lane
+            )
             self.vehicle_counter += 1
             self.vehicles.append(vehicle)
 
-            # add to lane queue
             lane.current_queue_length += 1
             lane.total_vehicles_arrived += 1
 
-            # start vehicle service process
             self.env.process(self.vehicle_service(intersection, lane, vehicle))
-    '''
-    
-    
-    def vehicle_arrivals(self, intersection: Intersection, lane: Lane):
-        """
-        Process that generates vehicle arrivals (Erlang-k process).
-        M/G/1: Erlang-k inter-arrival times (models vehicle platooning).
-        k=1 -> exponential (M/M/1 behaviour)
-        k=2 -> Erlang-2 (moderate platooning, less variance)
-        """
-        while True:
-            # Erlang-k inter-arrival time
-            k = 1
-            theta = 1.0 / lane.arrival_rate  # scale parameter
-            inter_arrival_time = rd.gammavariate(k, theta)
-            yield self.env.timeout(inter_arrival_time)
-
-            # create new vehicle
-            vehicle = Vehicle(vehicle_id=self.vehicle_counter,
-                              arrival_time=self.env.now,
-                              lane=lane)
-            self.vehicle_counter += 1
-            self.vehicles.append(vehicle)
-
-            # add to lane queue
-            lane.current_queue_length += 1
-            lane.total_vehicles_arrived += 1
-
-            # start vehicle service process
-            self.env.process(self.vehicle_service(intersection, lane, vehicle))
-    
 
     def vehicle_service(self, intersection: Intersection, lane: Lane, vehicle: Vehicle):
-        """
-        Process for a vehicle waiting in queue and departing.
-        M/G/1: Erlang-k service times (G = General service distribution).
-        """
-        # request the server (vehicles wait if server is busy)
+        """SimPy process: vehicle waits for a server slot and a green light, then departs."""
         server = self.lane_servers[lane.lane_id]
         with server.request() as request:
-            yield request  # wait for server to be available
+            yield request  # wait for server to be free (M/G/1 queue discipline)
 
-            # wait until green light
             while not intersection.traffic_light.is_green(lane.direction):
-                yield self.env.timeout(0.1)  # check every 0.1s
+                yield self.env.timeout(0.1)
 
-            # Erlang-k service time (G in M/G/1)
             k = config.ERLANG_K
-            theta = 1.0 / (lane.service_rate * k)  # scale parameter (mean = k/μ)
-            service_time = rd.gammavariate(k, theta)
+            service_time = rd.gammavariate(k, 1.0 / (lane.service_rate * k))
             yield self.env.timeout(service_time)
 
-            # vehicle departs
             lane.current_queue_length -= 1
             lane.total_vehicles_served += 1
-
             vehicle.calculate_waiting_time(self.env.now)
 
-            # only count vehicles after warm-up period
             if self.env.now >= self.warmup:
                 lane.total_waiting_time += vehicle.waiting_time
-    
-    def monitor_queues(self):
-        """
-        Periodically sample queue lengths for time-average calculations.
-        """
-        while True:
-            yield self.env.timeout(10) # sample every 10 seconds
 
-            # record queue lengths (actual queue length from server)
+    def monitor_queues(self):
+        """SimPy process: samples queue lengths every 10 seconds."""
+        while True:
+            yield self.env.timeout(10)
             for lane in self.network.get_all_lanes():
                 server = self.lane_servers[lane.lane_id]
-                queue_length = len(server.queue) + server.count  # waiting + being served
                 self.queue_length_samples[lane.lane_id].append(
-                    (self.env.now, queue_length)
+                    (self.env.now, len(server.queue) + server.count)
                 )
 
     def calculate_metrics(self) -> Dict:
-        """
-        Calculate performance metrics from simulation results.
-        """
-        # filter vehicles that arrived after warm-up
+        """Aggregate simulation results into a metrics dictionary."""
         valid_vehicles = [v for v in self.vehicles if v.arrival_time >= self.warmup]
 
-        if len(valid_vehicles) == 0:
+        if not valid_vehicles:
             return {
                 'avg_waiting_time': float('inf'),
                 'max_queue_length': float('inf'),
                 'total_vehicles': 0,
                 'blocked_intersections': 0
             }
-        
-        # average waiting time
+
         avg_waiting_time = np.mean([v.waiting_time for v in valid_vehicles])
 
-        # max queue length across all lanes
-        max_queue = 0
-        for lane in self.network.get_all_lanes():
-            lane_max = max([q for t, q in self.queue_length_samples[lane.lane_id]], default=0)
-            max_queue = max(max_queue, lane_max)
-        
-        # count blocked lanes (max queue > threshold during simulation)
-        blocked_count = 0
-        for lane in self.network.get_all_lanes():
-            lane_max = max([q for t, q in self.queue_length_samples[lane.lane_id]], default=0)
-            if lane_max > config.MAX_QUEUE_THRESHOLD:
-                blocked_count += 1
+        all_lanes = self.network.get_all_lanes()
+        lane_maxes = [
+            max((q for _, q in self.queue_length_samples[lane.lane_id]), default=0)
+            for lane in all_lanes
+        ]
 
-        # calculate time-averaged queue length
-        avg_queue_length = 0.0
-        total_samples = 0
-        for lane in self.network.get_all_lanes():
-            samples = self.queue_length_samples[lane.lane_id]
-            if samples:
-                avg_queue_length += np.mean([q for t, q in samples])
-                total_samples += 1
-        if total_samples > 0:
-            avg_queue_length /= total_samples
+        max_queue = max(lane_maxes, default=0)
+        blocked_count = sum(1 for m in lane_maxes if m > config.MAX_QUEUE_THRESHOLD)
+
+        lane_avgs = [
+            np.mean([q for _, q in self.queue_length_samples[lane.lane_id]])
+            for lane in all_lanes
+            if self.queue_length_samples[lane.lane_id]
+        ]
+        avg_queue_length = np.mean(lane_avgs) if lane_avgs else 0.0
 
         metrics = {
             'avg_waiting_time': avg_waiting_time,
@@ -288,7 +199,7 @@ class TrafficSimulation:
             print(f"Average waiting time: {metrics['avg_waiting_time']:.2f}s")
             print(f"Max queue length: {metrics['max_queue_length']}")
             print(f"Blocked lanes: {metrics['blocked_intersections']}")
-        
+
         return metrics
 
 
@@ -296,59 +207,47 @@ def run_multiple_simulations(network: Network, num_runs: int, duration: float,
                              warmup: float = 0, random_seed: int = None,
                              verbose: int = 0) -> Dict:
     """
-    Run multiple simulations and average the results (handle stochasticity).
+    Run multiple simulations and return averaged metrics.
+
+    Averaging across runs reduces the effect of stochastic variation.
+    queue_samples and light_states are taken from the final run only
+    (used downstream for animation).
 
     Args:
-        network: Traffic network to simulate
-        num_runs: Number of simulation runs
-        duration: Duration of each simulation (seconds)
-        warmup: Warm-up period to discard (seconds)
-        random_seed: Random seed for reproducibility
-        verbose: Verbosity level (0=silent, 1=basic, 2=detailed)
-    
+        network: Traffic network to simulate.
+        num_runs: Number of independent runs.
+        duration: Duration of each run (seconds).
+        warmup: Warm-up period to discard (seconds).
+        random_seed: Base seed — each run gets seed + run index.
+        verbose: 0=silent, 1=print per-run results.
+
     Returns:
-        Average metrics across all runs WITH queue_samples and light_states from last run.
+        Averaged metrics dict with queue_samples and light_states from the last run.
     """
     all_metrics = []
-    last_run_data = None  # store last run's detailed data
 
     for run in range(num_runs):
         seed = random_seed + run if random_seed is not None else None
-        
-        sim = TrafficSimulation(network, duration, warmup, seed, verbose=0)
-        metrics = sim.run()
+        metrics = TrafficSimulation(network, duration, warmup, seed, verbose=0).run()
         all_metrics.append(metrics)
-        
-        # keep last run's queue and light data for animation
-        if run == num_runs - 1:
-            last_run_data = {
-                'queue_samples': metrics['queue_samples'],
-                'light_states': metrics['light_states']
-            }
-        
+
         if verbose >= 1:
             print(f"Run {run+1}/{num_runs}: Avg Wait = {metrics['avg_waiting_time']:.2f}s")
-    
-    # average across all runs
-    averaged = {
-        'avg_waiting_time': np.mean([m['avg_waiting_time'] for m in all_metrics]),
-        'max_queue_length': np.mean([m['max_queue_length'] for m in all_metrics]),
-        'total_vehicles': np.mean([m['total_vehicles'] for m in all_metrics]),
+
+    last = all_metrics[-1]
+
+    return {
+        'avg_waiting_time':    np.mean([m['avg_waiting_time'] for m in all_metrics]),
+        'max_queue_length':    np.mean([m['max_queue_length'] for m in all_metrics]),
+        'total_vehicles':      np.mean([m['total_vehicles'] for m in all_metrics]),
         'blocked_intersections': np.mean([m['blocked_intersections'] for m in all_metrics]),
-        'std_waiting_time': np.std([m['avg_waiting_time'] for m in all_metrics]),
-        'queue_samples': last_run_data['queue_samples'],
-        'light_states': last_run_data['light_states']
+        'std_waiting_time':    np.std([m['avg_waiting_time'] for m in all_metrics]),
+        'queue_samples':       last['queue_samples'],
+        'light_states':        last['light_states']
     }
-    
-    return averaged
-    
+
 
 if __name__ == "__main__":
-    """
-    Basic test of simulation module.
-    """
-    from network import Network
-
     network = Network(
         num_intersections=4,
         topology=config.NETWORK_TOPOLOGY,
@@ -357,17 +256,15 @@ if __name__ == "__main__":
         initial_green=config.INITIAL_GREEN_TIME
     )
 
-    # run short simulation
     print("Running 100-second test simulation...")
     sim = TrafficSimulation(network, duration=100, warmup=0, random_seed=42, verbose=1)
     metrics = sim.run()
-    
+
     print("\nSimulation completed successfully!")
     print(f"Vehicles processed: {metrics['total_vehicles']}")
     print(f"Avg waiting time: {metrics['avg_waiting_time']:.2f}s")
-    
-    # sanity checks
+
     assert metrics['total_vehicles'] > 0, "No vehicles processed!"
     assert metrics['avg_waiting_time'] > 0, "Invalid waiting time!"
-    
+
     print("\nAll tests passed!")
